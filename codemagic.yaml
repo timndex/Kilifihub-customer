@@ -294,7 +294,8 @@ workflows:
                   if kts:
                       # In Kotlin DSL, add buildscript block before plugins block
                       # Use \n escapes (not actual newlines) to avoid YAML parser errors
-                      buildscript_block = 'buildscript {\n    dependencies {\n        classpath("com.google.gms:google-services:4.4.2")\n    }\n}\n'
+                      # Include repositories so Gradle knows where to download the dependency
+                      buildscript_block = 'buildscript {\n    repositories {\n        google()\n        mavenCentral()\n    }\n    dependencies {\n        classpath("com.google.gms:google-services:4.4.2")\n    }\n}\n'
                       if 'plugins {' in content:
                           content = content.replace('plugins {', buildscript_block + 'plugins {')
                       else:
@@ -310,7 +311,7 @@ workflows:
                           else:
                               content = content.rstrip() + "\n\ndependencies {\n    classpath 'com.google.gms:google-services:4.4.2'\n}\n"
                       else:
-                          content = "buildscript {\n    dependencies {\n        classpath 'com.google.gms:google-services:4.4.2'\n    }\n}\n\n" + content
+                          content = "buildscript {\n    repositories {\n        google()\n        mavenCentral()\n    }\n    dependencies {\n        classpath 'com.google.gms:google-services:4.4.2'\n    }\n}\n\n" + content
                       print(f"Added google-services buildscript classpath to {gradle_file} (Groovy DSL)")
 
               with open(gradle_file, 'w') as f:
