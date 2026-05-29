@@ -1,6 +1,6 @@
 workflows:
   android-apk:
-    name: KilifiHub Customer Android APK
+    name: KilifiHub Rider Android APK
     max_build_duration: 30
     instance_type: mac_mini_m2
 
@@ -14,9 +14,8 @@ workflows:
       # FIREBASE_ANDROID_API_KEY: AIzaSy...
       # FIREBASE_ANDROID_APP_ID: 1:123456789:android:abc123
       # FIREBASE_MESSAGING_SENDER_ID: 123456789
-      # FIREBASE_PROJECT_ID: kilifihub-customer
-      # FIREBASE_STORAGE_BUCKET: kilifihub-customer.appspot.com
-      # GOOGLE_MAPS_API_KEY: AIzaSy... (for delivery tracking map)
+      # FIREBASE_PROJECT_ID: kilifihub-rider
+      # FIREBASE_STORAGE_BUCKET: kilifihub-rider.appspot.com
 
     triggering:
       events:
@@ -28,7 +27,7 @@ workflows:
     scripts:
       - name: Create fresh Flutter project and copy our code
         script: |
-          flutter create --org com.kilifihub --project-name kilifihub_customer /tmp/fresh_project
+          flutter create --org com.kilifihub --project-name kilifihub_rider /tmp/fresh_project
           cp -r lib/ /tmp/fresh_project/lib/
           cp pubspec.yaml /tmp/fresh_project/pubspec.yaml
           if [ -d "assets" ]; then
@@ -56,7 +55,7 @@ workflows:
             "client": [{
               "client_info": {
                 "mobilesdk_app_id": "1:000000000000:android:0000000000000000",
-                "android_client_info": { "package_name": "com.kilifihub.customer" }
+                "android_client_info": { "package_name": "com.kilifihub.kilifihub_rider" }
               },
               "api_key": [{ "current_key": "placeholder" }],
               "services": {
@@ -68,22 +67,22 @@ workflows:
           GSEOF
           fi
 
-          # Write AndroidManifest.xml with all our permissions
+          # Write AndroidManifest.xml with our permissions
           cat > /tmp/fresh_project/android/app/src/main/AndroidManifest.xml << 'MANIFESTEOF'
           <manifest xmlns:android="http://schemas.android.com/apk/res/android">
-              <uses-permission android:name="android.permission.INTERNET" />
-              <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
               <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
               <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
-              <uses-permission android:name="android.permission.CAMERA" />
-              <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
-              <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="28" />
-              <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
+              <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
+              <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+              <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
+              <uses-permission android:name="android.permission.WAKE_LOCK" />
+              <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+              <uses-permission android:name="android.permission.INTERNET" />
+              <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
               <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
               <uses-permission android:name="android.permission.VIBRATE" />
-              <uses-permission android:name="android.permission.WAKE_LOCK" />
               <application
-                  android:label="KilifiHub"
+                  android:label="KilifiHub Rider"
                   android:name="${applicationName}"
                   android:icon="@mipmap/ic_launcher"
                   android:usesCleartextTraffic="true"
@@ -113,18 +112,28 @@ workflows:
                           <action android:name="com.google.firebase.MESSAGING_EVENT" />
                       </intent-filter>
                   </service>
+                  <!-- Background GPS service -->
+                  <service
+                      android:name="id.flutter.flutter_background_service.BackgroundService"
+                      android:foregroundServiceType="location"
+                      android:exported="false"
+                      android:stopWithTask="false" />
+                  <!-- Boot receiver -->
+                  <receiver
+                      android:name="id.flutter.flutter_background_service.BootReceiver"
+                      android:exported="false">
+                      <intent-filter>
+                          <action android:name="android.intent.action.BOOT_COMPLETED" />
+                      </intent-filter>
+                  </receiver>
                   <meta-data
                       android:name="flutterEmbedding"
                       android:value="2" />
-                  <!-- Google Maps API Key -->
-                  <meta-data
-                      android:name="com.google.android.geo.API_KEY"
-                      android:value="YOUR_GOOGLE_MAPS_API_KEY_HERE" />
               </application>
           </manifest>
           MANIFESTEOF
 
-          # Write network security config for cleartext HTTP
+          # Write network security config for HTTPS connections
           mkdir -p /tmp/fresh_project/android/app/src/main/res/xml
           cat > /tmp/fresh_project/android/app/src/main/res/xml/network_security_config.xml << 'NETSECEOF'
           <?xml version="1.0" encoding="utf-8"?>
@@ -132,8 +141,6 @@ workflows:
               <domain-config cleartextTrafficPermitted="true">
                   <domain includeSubdomains="true">ats.unaux.com</domain>
                   <domain includeSubdomains="true">kilifihub.co.ke</domain>
-                  <domain includeSubdomains="true">sandbox.safaricom.co.ke</domain>
-                  <domain includeSubdomains="true">api.safaricom.co.ke</domain>
                   <domain includeSubdomains="true">10.0.2.2</domain>
                   <domain includeSubdomains="true">localhost</domain>
               </domain-config>
@@ -144,14 +151,6 @@ workflows:
               </base-config>
           </network-security-config>
           NETSECEOF
-
-          # Write Google Maps API key from environment variable if set
-          if [ -n "$GOOGLE_MAPS_API_KEY" ]; then
-            sed -i '' "s/YOUR_GOOGLE_MAPS_API_KEY_HERE/$GOOGLE_MAPS_API_KEY/" /tmp/fresh_project/android/app/src/main/AndroidManifest.xml
-            echo "Google Maps API key injected from environment variable"
-          else
-            echo "WARNING: GOOGLE_MAPS_API_KEY not set. Map tracking will show blank."
-          fi
 
           rm -rf /Users/builder/clone/*
           cp -r /tmp/fresh_project/* /Users/builder/clone/
@@ -186,13 +185,16 @@ workflows:
               # --- Add google-services plugin for Firebase ---
               if 'com.google.gms.google-services' not in content:
                   if kts:
+                      # Add the google-services plugin at the top of plugins block
                       if 'plugins {' in content:
+                          # Find end of plugins block and add before closing }
                           content = re.sub(
                               r'(plugins\s*\{)',
                               r'\1\n    id("com.google.gms.google-services") version "4.4.2" apply true',
                               content
                           )
                       else:
+                          # No plugins block - add it as first line after android block
                           content = 'plugins {\n    id("com.google.gms.google-services") version "4.4.2" apply true\n}\n' + content
                       print("Added google-services plugin (Kotlin DSL)")
                   else:
@@ -204,22 +206,17 @@ workflows:
                           content = "apply plugin: 'com.google.gms.google-services'\n" + content
                       print("Added google-services plugin (Groovy DSL)")
 
-              # --- Fix compileSdk and targetSdk ---
+              # --- Fix compileSdk ---
               if kts:
                   content = re.sub(r'compileSdk\s*=\s*flutter\.compileSdkVersion', 'compileSdk = 36', content)
                   content = re.sub(r'compileSdk\s*=\s*\d+', 'compileSdk = 36', content)
                   content = re.sub(r'targetSdk\s*=\s*flutter\.targetSdkVersion', 'targetSdk = 36', content)
                   content = re.sub(r'targetSdk\s*=\s*\d+', 'targetSdk = 36', content)
-                  # Set minSdk to 23 for our dependencies
-                  content = re.sub(r'minSdk\s*=\s*flutter\.minSdkVersion', 'minSdk = 23', content)
-                  content = re.sub(r'minSdk\s*=\s*\d+', 'minSdk = 23', content)
               else:
                   content = re.sub(r'compileSdk\s+flutter\.compileSdkVersion', 'compileSdk 36', content)
                   content = re.sub(r'compileSdk\s+\d+', 'compileSdk 36', content)
                   content = re.sub(r'targetSdk\s+flutter\.targetSdkVersion', 'targetSdk 36', content)
                   content = re.sub(r'targetSdk\s+\d+', 'targetSdk 36', content)
-                  content = re.sub(r'minSdk\s+flutter\.minSdkVersion', 'minSdk 23', content)
-                  content = re.sub(r'minSdk\s+\d+', 'minSdk 23', content)
 
               # --- Add desugaring to compileOptions ---
               if 'isCoreLibraryDesugaringEnabled' not in content and 'coreLibraryDesugaringEnabled' not in content:
@@ -250,46 +247,7 @@ workflows:
                           content = content.rstrip() + '\n\ndependencies {\n    coreLibraryDesugaring "com.android.tools:desugar_jdk_libs:2.1.4"\n}\n'
                       print("Appended new dependencies block with desugaring")
 
-              # --- Add multidex ---
-              if 'multidex' not in content.lower():
-                  if kts:
-                      if 'dependencies {' in content:
-                          content = content.replace(
-                              'dependencies {',
-                              'dependencies {\n    implementation("androidx.multidex:multidex:2.0.1")'
-                          )
-                  else:
-                      if 'dependencies {' in content:
-                          content = content.replace(
-                              'dependencies {',
-                              "dependencies {\n    implementation 'androidx.multidex:multidex:2.0.1'"
-                          )
-                  print("Added multidex dependency")
-
-              # --- Add Google Maps and Firebase dependencies ---
-              if 'play-services-maps' not in content:
-                  if kts:
-                      content = content.replace(
-                          'dependencies {',
-                          'dependencies {\n    implementation("com.google.android.gms:play-services-maps:18.2.0")'
-                      )
-                  else:
-                      content = content.replace(
-                          'dependencies {',
-                          "dependencies {\n    implementation 'com.google.android.gms:play-services-maps:18.2.0'"
-                      )
-                  print("Added Google Maps dependency")
-
-              # --- Fix JVM target to 17 ---
-              content = content.replace('JavaVersion.VERSION_1_8', 'JavaVersion.VERSION_17')
-              content = content.replace('jvmTarget = "1.8"', 'jvmTarget = "17"')
-              if 'kotlinOptions' not in content and 'compileOptions' in content:
-                  content = content.replace(
-                      'targetCompatibility = JavaVersion.VERSION_17\n            }',
-                      'targetCompatibility = JavaVersion.VERSION_17\n        }\n\n        kotlinOptions {\n            jvmTarget = "17"\n        }'
-                  )
-
-              # --- Add shrinkResources false ---
+              # --- Add shrinkResources false in buildTypes ---
               if 'shrinkResources' not in content:
                   if kts:
                       content = content.replace(
@@ -301,6 +259,15 @@ workflows:
                           'minifyEnabled false',
                           'minifyEnabled false\n            shrinkResources false'
                       )
+
+              # --- Fix JVM target to 17 for both Java and Kotlin ---
+              content = content.replace('JavaVersion.VERSION_1_8', 'JavaVersion.VERSION_17')
+              content = content.replace('jvmTarget = "1.8"', 'jvmTarget = "17"')
+              if 'kotlinOptions' not in content and 'compileOptions' in content:
+                  content = content.replace(
+                      'targetCompatibility = JavaVersion.VERSION_17\n            }',
+                      'targetCompatibility = JavaVersion.VERSION_17\n        }\n\n        kotlinOptions {\n            jvmTarget = "17"\n        }'
+                  )
 
               with open(gradle_file, 'w') as f:
                   f.write(content)
@@ -315,30 +282,40 @@ workflows:
               assert 'google-services' in content, "google-services plugin not found!"
               print("VERIFICATION: All critical patches confirmed!")
 
-          # === 2. Patch project-level build.gradle for google-services classpath ===
+          # === 2. Patch project-level build.gradle for google-services ===
+          # NOTE: Kotlin DSL (.kts) uses buildscript { dependencies { classpath(...) } }
+          # or the plugins block. We add a buildscript block which works in both.
           for gradle_file in glob.glob("android/build.gradle*"):
               kts = is_kts(gradle_file)
               with open(gradle_file, 'r') as f:
                   content = f.read()
 
-              if 'com.google.gms' not in content:
+              if 'com.google.gms' not in content and 'google-services' not in content:
                   if kts:
-                      if 'dependencies {' in content:
-                          content = content.replace(
-                              'dependencies {',
-                              'dependencies {\n        classpath("com.google.gms:google-services:4.4.2")'
-                          )
+                      # In Kotlin DSL, add buildscript block before plugins block
+                      buildscript_block = '''buildscript {
+          dependencies {
+              classpath("com.google.gms:google-services:4.4.2")
+          }
+      }
+      '''
+                      if 'plugins {' in content:
+                          content = content.replace('plugins {', buildscript_block + 'plugins {')
                       else:
-                          content = content.rstrip() + '\n\ndependencies {\n    classpath("com.google.gms:google-services:4.4.2")\n}\n'
+                          content = buildscript_block + content
+                      print(f"Added google-services buildscript classpath to {gradle_file} (Kotlin DSL)")
                   else:
-                      if 'dependencies {' in content:
-                          content = content.replace(
-                              'dependencies {',
-                              "dependencies {\n        classpath 'com.google.gms:google-services:4.4.2'"
-                          )
+                      if 'buildscript' in content:
+                          if 'dependencies {' in content:
+                              content = content.replace(
+                                  'dependencies {',
+                                  "dependencies {\n        classpath 'com.google.gms:google-services:4.4.2'"
+                              )
+                          else:
+                              content = content.rstrip() + "\n\ndependencies {\n    classpath 'com.google.gms:google-services:4.4.2'\n}\n"
                       else:
-                          content = content.rstrip() + "\n\ndependencies {\n    classpath 'com.google.gms:google-services:4.4.2'\n}\n"
-                  print(f"Added google-services classpath to {gradle_file}")
+                          content = "buildscript {\n    dependencies {\n        classpath 'com.google.gms:google-services:4.4.2'\n    }\n}\n\n" + content
+                      print(f"Added google-services buildscript classpath to {gradle_file} (Groovy DSL)")
 
               with open(gradle_file, 'w') as f:
                   f.write(content)
@@ -419,7 +396,7 @@ workflows:
           done
           echo "=== Namespace fix complete ==="
 
-      - name: Fix Dart code issues and update firebase_options
+      - name: Fix all Dart code issues and update firebase_options
         script: |
           echo "Fixing Dart code issues..."
 
@@ -450,7 +427,7 @@ workflows:
             echo "Fixed main.dart"
           fi
 
-          # Fix push_notification_service.dart - remove const where needed
+          # Fix push_notification_service.dart
           PUSH_FILE="lib/services/push_notification_service.dart"
           if [ -f "$PUSH_FILE" ]; then
             sed -i '' 's/const AndroidNotificationDetails androidDetails/AndroidNotificationDetails androidDetails/' "$PUSH_FILE"
@@ -458,24 +435,34 @@ workflows:
             echo "Fixed push_notification_service.dart"
           fi
 
-          # Fix api_service.dart - use singleton instance
+          # Fix api_service.dart
           API_FILE="lib/services/api_service.dart"
           if [ -f "$API_FILE" ]; then
             sed -i '' 's/StorageService()/StorageService.instance/' "$API_FILE"
             echo "Fixed api_service.dart"
           fi
 
-          # Fix common const issues in generated code
-          find lib/ -name "*.dart" -exec sed -i '' 's/const SliverGridDelegateWithFixedCrossAxisCount/SliverGridDelegateWithFixedCrossAxisCount/g' {} \;
-          find lib/ -name "*.dart" -exec sed -i '' 's/const EdgeInsets\.symmetric/EdgeInsets.symmetric/g' {} \;
-          find lib/ -name "*.dart" -exec sed -i '' 's/const EdgeInsets\.all/EdgeInsets.all/g' {} \;
-          find lib/ -name "*.dart" -exec sed -i '' 's/const EdgeInsets\.only/EdgeInsets.only/g' {} \;
-          find lib/ -name "*.dart" -exec sed -i '' 's/const BorderRadius\.circular/BorderRadius.circular/g' {} \;
-          find lib/ -name "*.dart" -exec sed -i '' 's/const SizedBox/SizedBox/g' {} \;
+          # Fix api_config.dart
+          API_CFG="lib/config/api_config.dart"
+          if [ -f "$API_CFG" ]; then
+            sed -i '' 's/static const double GPS_DISTANCE_FILTER_METERS = 5.0;/static const int GPS_DISTANCE_FILTER_METERS = 5;/' "$API_CFG"
+            echo "Fixed api_config.dart"
+          fi
+
+          # Fix location_service.dart
+          LOC_FILE="lib/services/location_service.dart"
+          if [ -f "$LOC_FILE" ]; then
+            sed -i '' 's/ApiConfig.GPS_DISTANCE_FILTER_METERS.toInt()/ApiConfig.GPS_DISTANCE_FILTER_METERS/g' "$LOC_FILE"
+            sed -i '' 's/locationSettings: const LocationSettings(/desiredAccuracy: LocationAccuracy.high,/' "$LOC_FILE"
+            sed -i '' '/accuracy: LocationAccuracy.high,$/d' "$LOC_FILE"
+            sed -i '' '/timeLimit: Duration(seconds: 10),$/s//timeLimit: Duration(seconds: 10),/' "$LOC_FILE"
+            sed -i '' 's/        ),$/      );/' "$LOC_FILE"
+            echo "Fixed location_service.dart"
+          fi
 
           echo "=== All Dart fixes complete ==="
 
-      - name: Re-get packages after fixes
+      - name: Re-get packages after pubspec fix
         script: flutter pub get
 
       - name: Build APK
