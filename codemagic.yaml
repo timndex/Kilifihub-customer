@@ -293,12 +293,8 @@ workflows:
               if 'com.google.gms' not in content and 'google-services' not in content:
                   if kts:
                       # In Kotlin DSL, add buildscript block before plugins block
-                      buildscript_block = '''buildscript {
-          dependencies {
-              classpath("com.google.gms:google-services:4.4.2")
-          }
-      }
-      '''
+                      # Use \n escapes (not actual newlines) to avoid YAML parser errors
+                      buildscript_block = 'buildscript {\n    dependencies {\n        classpath("com.google.gms:google-services:4.4.2")\n    }\n}\n'
                       if 'plugins {' in content:
                           content = content.replace('plugins {', buildscript_block + 'plugins {')
                       else:
