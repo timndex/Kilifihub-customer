@@ -183,20 +183,13 @@ workflows:
               print(f"--- END ORIGINAL ---")
 
               # --- Add google-services plugin for Firebase ---
+              # NOTE: The root build.gradle.kts adds the classpath via buildscript.
+              # Here we just apply the plugin without a version (version comes from classpath).
               if 'com.google.gms.google-services' not in content:
                   if kts:
-                      # Add the google-services plugin at the top of plugins block
-                      if 'plugins {' in content:
-                          # Find end of plugins block and add before closing }
-                          content = re.sub(
-                              r'(plugins\s*\{)',
-                              r'\1\n    id("com.google.gms.google-services") version "4.4.2" apply true',
-                              content
-                          )
-                      else:
-                          # No plugins block - add it as first line after android block
-                          content = 'plugins {\n    id("com.google.gms.google-services") version "4.4.2" apply true\n}\n' + content
-                      print("Added google-services plugin (Kotlin DSL)")
+                      # Use apply() at end of file — avoids plugins block version conflict
+                      content = content.rstrip() + '\n\napply(plugin = "com.google.gms.google-services")\n'
+                      print("Added google-services apply() (Kotlin DSL)")
                   else:
                       content = content.replace(
                           "apply plugin: 'com.android.application'",
