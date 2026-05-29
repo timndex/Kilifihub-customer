@@ -1,0 +1,135 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+
+    <!-- Standard Flutter runner configuration -->
+    <key>CFBundleDevelopmentRegion</key>
+    <string>$(DEVELOPMENT_LANGUAGE)</string>
+
+    <key>CFBundleDisplayName</key>
+    <string>KilifiHub</string>
+
+    <key>CFBundleExecutable</key>
+    <string>$(EXECUTABLE_NAME)</string>
+
+    <key>CFBundleIdentifier</key>
+    <string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+
+    <key>CFBundleInfoDictionaryVersion</key>
+    <string>6.0</string>
+
+    <key>CFBundleName</key>
+    <string>kilifihub_customer</string>
+
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+
+    <key>CFBundleShortVersionString</key>
+    <string>$(FLUTTER_BUILD_NAME)</string>
+
+    <key>CFBundleSignature</key>
+    <string>????</string>
+
+    <key>CFBundleVersion</key>
+    <string>$(FLUTTER_BUILD_NUMBER)</string>
+
+    <key>LSRequiresIPhoneOS</key>
+    <true/>
+
+    <!-- Enable background modes for Firebase Messaging -->
+    <key>UIBackgroundModes</key>
+    <array>
+        <string>fetch</string>
+        <string>remote-notification</string>
+        <string>location</string>
+    </array>
+
+    <!-- App Transport Security - Allow arbitrary loads for dev server (ats.unaux.com) -->
+    <!-- IMPORTANT: Disable AllowsArbitraryLoads in production by setting to NO -->
+    <key>NSAppTransportSecurity</key>
+    <dict>
+        <key>NSAllowsArbitraryLoads</key>
+        <true/>
+        <key>NSAllowsLocalNetworking</key>
+        <true/>
+        <key>NSExceptionDomains</key>
+        <dict>
+            <key>unaux.com</key>
+            <dict>
+                <key>NSExceptionAllowsInsecureHTTPLoads</key>
+                <true/>
+                <key>NSIncludesSubdomains</key>
+                <true/>
+            </dict>
+            <key>safaricom.co.ke</key>
+            <dict>
+                <key>NSExceptionAllowsInsecureHTTPLoads</key>
+                <true/>
+                <key>NSIncludesSubdomains</key>
+                <true/>
+            </dict>
+        </dict>
+    </dict>
+
+    <!-- Location permissions -->
+    <key>NSLocationWhenInUseUsageDescription</key>
+    <string>KilifiHub needs your location to show nearby pharmacies and deliver orders to your address.</string>
+
+    <key>NSLocationAlwaysUsageDescription</key>
+    <string>KilifiHub needs access to your location to provide delivery tracking and nearby service alerts.</string>
+
+    <key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+    <string>KilifiHub needs access to your location to provide delivery tracking and nearby service alerts.</string>
+
+    <!-- Camera permission for prescription upload -->
+    <key>NSCameraUsageDescription</key>
+    <string>KilifiHub needs camera access to capture prescription images for order processing.</string>
+
+    <!-- Photo library permission for prescription upload -->
+    <key>NSPhotoLibraryUsageDescription</key>
+    <string>KilifiHub needs photo library access to select prescription images for order processing.</string>
+
+    <!-- Photo library addition permission (iOS 11+) -->
+    <key>NSPhotoLibraryAddUsageDescription</key>
+    <string>KilifiHub needs permission to save images to your photo library.</string>
+
+    <!-- Firebase Messaging configuration -->
+    <key>FirebaseMessagingAutoInitEnabled</key>
+    <false/>
+
+    <!-- Launch screen configuration -->
+    <key>UILaunchStoryboardName</key>
+    <string>LaunchScreen</string>
+
+    <!-- Main storyboard -->
+    <key>UIMainStoryboardFile</key>
+    <string>Main</string>
+
+    <!-- Supported interface orientations -->
+    <key>UISupportedInterfaceOrientations</key>
+    <array>
+        <string>UIInterfaceOrientationPortrait</string>
+    </array>
+
+    <key>UISupportedInterfaceOrientations~ipad</key>
+    <array>
+        <string>UIInterfaceOrientationPortrait</string>
+        <string>UIInterfaceOrientationPortraitUpsideDown</string>
+        <string>UIInterfaceOrientationLandscapeLeft</string>
+        <string>UIInterfaceOrientationLandscapeRight</string>
+    </array>
+
+    <!-- Status bar configuration -->
+    <key>UIViewControllerBasedStatusBarAppearance</key>
+    <false/>
+
+    <key>CADisableMinimumFrameDurationOnPhone</key>
+    <true/>
+
+    <!-- Minimum iOS version -->
+    <key>MinimumOSVersion</key>
+    <string>12.0</string>
+
+</dict>
+</plist>

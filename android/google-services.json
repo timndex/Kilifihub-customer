@@ -1,0 +1,39 @@
+{
+  "project_info": {
+    "project_number": "REPLACE_WITH_YOUR_PROJECT_NUMBER",
+    "project_id": "REPLACE_WITH_YOUR_PROJECT_ID",
+    "storage_bucket": "REPLACE_WITH_YOUR_STORAGE_BUCKET"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:REPLACE_WITH_YOUR_PROJECT_NUMBER:android:REPLACE_WITH_YOUR_APP_ID",
+        "android_client_info": {
+          "package_name": "com.kilifihub.customer"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "REPLACE_WITH_YOUR_CLIENT_ID-android",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "REPLACE_WITH_YOUR_ANDROID_API_KEY"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "REPLACE_WITH_YOUR_CLIENT_ID",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
