@@ -628,20 +628,35 @@ workflows:
           # ============================================================
           # Fix api_service.dart
           # Fix StorageService() -> StorageService.instance
-          # Fix connectivityResult.contains() -> connectivityResult ==
-          # (ConnectivityResult is now an enum, not a list)
+          # Fix connectivityResult.contains() - in newer connectivity_plus
+          # checkConnectivity() returns List<ConnectivityResult>, so we
+          # need to check if the list contains .none
           # ============================================================
           api_file = "lib/services/api_service.dart"
           if os.path.exists(api_file):
               with open(api_file, 'r') as f:
                   content = f.read()
               content = content.replace("StorageService()", "StorageService.instance")
-              # connectivity_plus changed: ConnectivityResult is now an enum
-              # Old: connectivityResult.contains(ConnectivityResult.none)
-              # New: connectivityResult == ConnectivityResult.none
+              # Fix connectivity check - handle both old and new API
+              # New connectivity_plus: checkConnectivity() returns List<ConnectivityResult>
+              # Old: returns ConnectivityResult (single enum)
+              # If the variable is typed as ConnectivityResult (enum),
+              # use == comparison. If it's a List, use .contains()
+              # Safest: use .any() which works for both
               content = content.replace(
                   "connectivityResult.contains(ConnectivityResult.none)",
-                  "connectivityResult == ConnectivityResult.none"
+                  "connectivityResult == ConnectivityResult.none || (connectivityResult is List && connectivityResult.contains(ConnectivityResult.none))"
+              )
+              # Also handle the case where the variable might need
+              # to be checked as a list result from checkConnectivity()
+              content = content.replace(
+                  "final ConnectivityResult connectivityResult",
+                  "final List<ConnectivityResult> connectivityResult"
+              )
+              # Fix the == check for list type
+              content = content.replace(
+                  "connectivityResult == ConnectivityResult.none || (connectivityResult is List && connectivityResult.contains(ConnectivityResult.none))",
+                  "connectivityResult.contains(ConnectivityResult.none)"
               )
               with open(api_file, 'w') as f:
                   f.write(content)
