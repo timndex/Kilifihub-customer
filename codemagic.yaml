@@ -628,24 +628,23 @@ workflows:
           # ============================================================
           # Fix api_service.dart
           # Fix StorageService() -> StorageService.instance
-          # Fix connectivity check - connectivity_plus now returns
-          # List<ConnectivityResult> from checkConnectivity(), but the
-          # code types the variable as ConnectivityResult (single enum)
-          # and calls .contains() on it which fails.
-          # Fix: change type to List<ConnectivityResult> so .contains() works
+          # Fix connectivity check - the installed connectivity_plus version
+          # returns a single ConnectivityResult enum (not a List), so
+          # .contains() doesn't work. Use == comparison instead.
           # ============================================================
           api_file = "lib/services/api_service.dart"
           if os.path.exists(api_file):
               with open(api_file, 'r') as f:
                   content = f.read()
               content = content.replace("StorageService()", "StorageService.instance")
-              # Step 1: Change variable type from single enum to List
-              content = content.replace(
-                  "ConnectivityResult connectivityResult",
-                  "List<ConnectivityResult> connectivityResult"
+              # Fix: .contains() doesn't work on ConnectivityResult enum
+              # Use regex to catch various patterns of the check
+              # Pattern: connectivityResult.contains(ConnectivityResult.none)
+              content = re.sub(
+                  r'(\w+)\.contains\(ConnectivityResult\.none\)',
+                  r'\1 == ConnectivityResult.none',
+                  content
               )
-              # Step 2: .contains() now works on List, no further change needed
-              # (the original .contains(ConnectivityResult.none) is correct for List)
               with open(api_file, 'w') as f:
                   f.write(content)
               print("Fixed api_service.dart (StorageService, ConnectivityResult)")
