@@ -572,6 +572,10 @@ workflows:
               if "package:provider" not in content:
                   content = "import 'package:provider/provider.dart';\n" + content
                   print("Added provider import to main.dart")
+              # FIX: CupertinoPageTransitionsBuilder needs cupertino import
+              if "CupertinoPageTransitionsBuilder" in content and "package:flutter/cupertino.dart" not in content:
+                  content = "import 'package:flutter/cupertino.dart';\n" + content
+                  print("Added cupertino import to main.dart")
               # FIX: const expression with CupertinoPageTransitionsBuilder
               # CupertinoPageTransitionsBuilder() is not const, so the const
               # keyword must be removed from the enclosing constructor
