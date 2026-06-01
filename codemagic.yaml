@@ -1,6 +1,6 @@
 workflows:
   android-apk:
-    name: KilifiHub Rider Android APK
+    name: KilifiHub Customer Android APK
     max_build_duration: 30
     instance_type: mac_mini_m2
 
@@ -14,8 +14,8 @@ workflows:
       # FIREBASE_ANDROID_API_KEY: AIzaSy...
       # FIREBASE_ANDROID_APP_ID: 1:123456789:android:abc123
       # FIREBASE_MESSAGING_SENDER_ID: 123456789
-      # FIREBASE_PROJECT_ID: kilifihub-rider
-      # FIREBASE_STORAGE_BUCKET: kilifihub-rider.appspot.com
+      # FIREBASE_PROJECT_ID: kilifihub-customer
+      # FIREBASE_STORAGE_BUCKET: kilifihub-customer.appspot.com
 
     triggering:
       events:
@@ -27,7 +27,7 @@ workflows:
     scripts:
       - name: Create fresh Flutter project and copy our code
         script: |
-          flutter create --org com.kilifihub --project-name kilifihub_rider /tmp/fresh_project
+          flutter create --org com.kilifihub --project-name kilifihub_customer /tmp/fresh_project
           cp -r lib/ /tmp/fresh_project/lib/
           cp pubspec.yaml /tmp/fresh_project/pubspec.yaml
           if [ -d "assets" ]; then
@@ -55,7 +55,7 @@ workflows:
             "client": [{
               "client_info": {
                 "mobilesdk_app_id": "1:000000000000:android:0000000000000000",
-                "android_client_info": { "package_name": "com.kilifihub.kilifihub_rider" }
+                "android_client_info": { "package_name": "com.kilifihub.kilifihub_customer" }
               },
               "api_key": [{ "current_key": "placeholder" }],
               "services": {
@@ -82,7 +82,7 @@ workflows:
               <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
               <uses-permission android:name="android.permission.VIBRATE" />
               <application
-                  android:label="KilifiHub Rider"
+                  android:label="KilifiHub Customer"
                   android:name="${applicationName}"
                   android:icon="@mipmap/ic_launcher"
                   android:usesCleartextTraffic="true"
@@ -112,20 +112,6 @@ workflows:
                           <action android:name="com.google.firebase.MESSAGING_EVENT" />
                       </intent-filter>
                   </service>
-                  <!-- Background GPS service -->
-                  <service
-                      android:name="id.flutter.flutter_background_service.BackgroundService"
-                      android:foregroundServiceType="location"
-                      android:exported="false"
-                      android:stopWithTask="false" />
-                  <!-- Boot receiver -->
-                  <receiver
-                      android:name="id.flutter.flutter_background_service.BootReceiver"
-                      android:exported="false">
-                      <intent-filter>
-                          <action android:name="android.intent.action.BOOT_COMPLETED" />
-                      </intent-filter>
-                  </receiver>
                   <meta-data
                       android:name="flutterEmbedding"
                       android:value="2" />
@@ -183,11 +169,8 @@ workflows:
               print(f"--- END ORIGINAL ---")
 
               # --- Add google-services plugin for Firebase ---
-              # NOTE: The root build.gradle.kts adds the classpath via buildscript.
-              # Here we just apply the plugin without a version (version comes from classpath).
               if 'com.google.gms.google-services' not in content:
                   if kts:
-                      # Use apply() at end of file — avoids plugins block version conflict
                       content = content.rstrip() + '\n\napply(plugin = "com.google.gms.google-services")\n'
                       print("Added google-services apply() (Kotlin DSL)")
                   else:
@@ -276,8 +259,6 @@ workflows:
               print("VERIFICATION: All critical patches confirmed!")
 
           # === 2. Patch project-level build.gradle for google-services ===
-          # NOTE: Kotlin DSL (.kts) uses buildscript { dependencies { classpath(...) } }
-          # or the plugins block. We add a buildscript block which works in both.
           for gradle_file in glob.glob("android/build.gradle*"):
               kts = is_kts(gradle_file)
               with open(gradle_file, 'r') as f:
@@ -285,9 +266,6 @@ workflows:
 
               if 'com.google.gms' not in content and 'google-services' not in content:
                   if kts:
-                      # In Kotlin DSL, add buildscript block before plugins block
-                      # Use \n escapes (not actual newlines) to avoid YAML parser errors
-                      # Include repositories so Gradle knows where to download the dependency
                       buildscript_block = 'buildscript {\n    repositories {\n        google()\n        mavenCentral()\n    }\n    dependencies {\n        classpath("com.google.gms:google-services:4.4.2")\n    }\n}\n'
                       if 'plugins {' in content:
                           content = content.replace('plugins {', buildscript_block + 'plugins {')
@@ -386,14 +364,180 @@ workflows:
           done
           echo "=== Namespace fix complete ==="
 
-      - name: Fix all Dart code issues and update firebase_options
+      - name: Fix all Dart code issues and create missing files
         script: |
+          set -e
           echo "Fixing Dart code issues..."
 
           # ============================================================
+          # FIX 1: Create CartProvider if missing
+          # Error: 'CartProvider' isn't a type (search_screen.dart)
+          # ============================================================
+          PROVIDERS_DIR="lib/providers"
+          mkdir -p "$PROVIDERS_DIR"
+          if [ ! -f "$PROVIDERS_DIR/cart_provider.dart" ]; then
+            cat > "$PROVIDERS_DIR/cart_provider.dart" << 'CART_EOF'
+import 'package:flutter/foundation.dart';
+
+class CartProvider with ChangeNotifier {
+  final Map<String, int> _items = {};
+
+  Map<String, int> get items => {..._items};
+
+  int get itemCount => _items.length;
+
+  void addItem(String productId, int quantity) {
+    if (_items.containsKey(productId)) {
+      _items[productId] = _items[productId]! + quantity;
+    } else {
+      _items[productId] = quantity;
+    }
+    notifyListeners();
+  }
+
+  void removeItem(String productId) {
+    _items.remove(productId);
+    notifyListeners();
+  }
+
+  void updateQuantity(String productId, int quantity) {
+    if (quantity <= 0) {
+      _items.remove(productId);
+    } else {
+      _items[productId] = quantity;
+    }
+    notifyListeners();
+  }
+
+  void clear() {
+    _items.clear();
+    notifyListeners();
+  }
+}
+CART_EOF
+            echo "✅ Created: cart_provider.dart"
+          else
+            echo "✅ cart_provider.dart already exists"
+          fi
+
+          # ============================================================
+          # FIX 2: Create OrderTrackingScreen if missing
+          # Error: 'OrderTrackingScreen' isn't defined (orders_screen.dart)
+          # ============================================================
+          if [ ! -f "lib/screens/order_tracking_screen.dart" ]; then
+            cat > "lib/screens/order_tracking_screen.dart" << 'TRACK_EOF'
+import 'package:flutter/material.dart';
+
+class OrderTrackingScreen extends StatelessWidget {
+  final String orderId;
+
+  const OrderTrackingScreen({
+    Key? key,
+    required this.orderId,
+  }) : super(key: key);
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: Text('Track Order #$orderId'),
+      ),
+      body: Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(Icons.local_shipping, size: 64, color: Colors.blue),
+            const SizedBox(height: 16),
+            Text(
+              'Order #$orderId',
+              style: Theme.of(context).textTheme.headlineSmall,
+            ),
+            const SizedBox(height: 8),
+            const Text('Tracking information will appear here'),
+          ],
+        ),
+      ),
+    );
+  }
+}
+TRACK_EOF
+            echo "✅ Created: order_tracking_screen.dart"
+          else
+            echo "✅ order_tracking_screen.dart already exists"
+          fi
+
+          # ============================================================
+          # FIX 3: Add CartProvider import to search_screen.dart
+          # Error: 'CartProvider' isn't a type (search_screen.dart:551)
+          # ============================================================
+          SEARCH_FILE="lib/screens/search_screen.dart"
+          if [ -f "$SEARCH_FILE" ]; then
+            if ! grep -q "cart_provider.dart" "$SEARCH_FILE"; then
+              sed -i '' "1s/^/import '..\/providers\/cart_provider.dart';\n/" "$SEARCH_FILE"
+              echo "✅ Added CartProvider import to search_screen.dart"
+            else
+              echo "✅ CartProvider import already in search_screen.dart"
+            fi
+          fi
+
+          # ============================================================
+          # FIX 4: Replace 'mounted' with 'context.mounted' in cart_screen.dart
+          # Error: The getter 'mounted' isn't defined for '_CartItemCard'
+          # ============================================================
+          CART_FILE="lib/screens/cart_screen.dart"
+          if [ -f "$CART_FILE" ]; then
+            sed -i '' 's/if (mounted)/if (context.mounted)/g' "$CART_FILE"
+            echo "✅ Fixed mounted → context.mounted in cart_screen.dart"
+          fi
+
+          # ============================================================
+          # FIX 5: Add OrderTrackingScreen import to orders_screen.dart
+          # Error: 'OrderTrackingScreen' isn't defined (orders_screen.dart:282)
+          # ============================================================
+          ORDERS_FILE="lib/screens/orders_screen.dart"
+          if [ -f "$ORDERS_FILE" ]; then
+            if ! grep -q "order_tracking_screen.dart" "$ORDERS_FILE"; then
+              sed -i '' "1s/^/import 'order_tracking_screen.dart';\n/" "$ORDERS_FILE"
+              echo "✅ Added OrderTrackingScreen import to orders_screen.dart"
+            else
+              echo "✅ OrderTrackingScreen import already in orders_screen.dart"
+            fi
+          fi
+
+          # ============================================================
+          # FIX 6: Replace locationSettings with desiredAccuracy in addresses_screen.dart
+          # Error: No named parameter 'locationSettings' (addresses_screen.dart:568)
+          # geolocator 10.x uses desiredAccuracy, not locationSettings
+          # ============================================================
+          ADDR_FILE="lib/screens/addresses_screen.dart"
+          if [ -f "$ADDR_FILE" ]; then
+            # Replace the locationSettings block with desiredAccuracy
+            # This handles the pattern: locationSettings: const LocationSettings(\n accuracy: LocationAccuracy.high,\n distanceFilter: N,\n ),
+            sed -i '' 's/locationSettings: const LocationSettings(/desiredAccuracy: LocationAccuracy.high,/' "$ADDR_FILE"
+            # Remove lines that were inside the LocationSettings() constructor
+            sed -i '' '/accuracy: LocationAccuracy.high,$/d' "$ADDR_FILE"
+            sed -i '' '/distanceFilter: [0-9]*,$/d' "$ADDR_FILE"
+            # Clean up leftover closing paren from LocationSettings(
+            # The pattern "), $" becomes just ")"
+            sed -i '' 's/),$/)/' "$ADDR_FILE"
+            echo "✅ Fixed locationSettings → desiredAccuracy in addresses_screen.dart"
+          fi
+
+          # ============================================================
+          # Also fix the same locationSettings issue in location_service.dart
+          # if the customer app has one (same pattern as rider app)
+          # ============================================================
+          LOC_FILE="lib/services/location_service.dart"
+          if [ -f "$LOC_FILE" ]; then
+            sed -i '' 's/locationSettings: const LocationSettings(/desiredAccuracy: LocationAccuracy.high,/' "$LOC_FILE"
+            sed -i '' '/accuracy: LocationAccuracy.high,$/d' "$LOC_FILE"
+            sed -i '' '/distanceFilter: [0-9]*,$/d' "$LOC_FILE"
+            sed -i '' 's/),$/)/' "$LOC_FILE"
+            echo "✅ Fixed locationSettings in location_service.dart"
+          fi
+
+          # ============================================================
           # Update firebase_options.dart with real values from env vars
-          # If not set, the placeholder values remain (build will still
-          # work but Firebase features won't function until configured)
           # ============================================================
           FIREBASE_OPTS="lib/firebase_options.dart"
           if [ -f "$FIREBASE_OPTS" ]; then
@@ -410,44 +554,51 @@ workflows:
             fi
           fi
 
+          # ============================================================
           # Fix CardTheme → CardThemeData in main.dart
+          # ============================================================
           MAIN_FILE="lib/main.dart"
           if [ -f "$MAIN_FILE" ]; then
             sed -i '' 's/CardTheme(/CardThemeData(/' "$MAIN_FILE"
-            echo "Fixed main.dart"
+            # Also add CartProvider import to main.dart if missing
+            if ! grep -q "cart_provider.dart" "$MAIN_FILE"; then
+              sed -i '' "1s/^/import 'providers\/cart_provider.dart';\n/" "$MAIN_FILE"
+              echo "✅ Added CartProvider import to main.dart"
+            fi
+            # Add provider package import if missing
+            if ! grep -q "package:provider" "$MAIN_FILE"; then
+              sed -i '' "1s/^/import 'package:provider\/provider.dart';\n/" "$MAIN_FILE"
+              echo "✅ Added provider import to main.dart"
+            fi
+            echo "✅ Fixed main.dart"
           fi
 
+          # ============================================================
           # Fix push_notification_service.dart
+          # ============================================================
           PUSH_FILE="lib/services/push_notification_service.dart"
           if [ -f "$PUSH_FILE" ]; then
             sed -i '' 's/const AndroidNotificationDetails androidDetails/AndroidNotificationDetails androidDetails/' "$PUSH_FILE"
             sed -i '' 's/const NotificationDetails details/NotificationDetails details/' "$PUSH_FILE"
-            echo "Fixed push_notification_service.dart"
+            echo "✅ Fixed push_notification_service.dart"
           fi
 
+          # ============================================================
           # Fix api_service.dart
+          # ============================================================
           API_FILE="lib/services/api_service.dart"
           if [ -f "$API_FILE" ]; then
             sed -i '' 's/StorageService()/StorageService.instance/' "$API_FILE"
-            echo "Fixed api_service.dart"
+            echo "✅ Fixed api_service.dart"
           fi
 
+          # ============================================================
           # Fix api_config.dart
+          # ============================================================
           API_CFG="lib/config/api_config.dart"
           if [ -f "$API_CFG" ]; then
             sed -i '' 's/static const double GPS_DISTANCE_FILTER_METERS = 5.0;/static const int GPS_DISTANCE_FILTER_METERS = 5;/' "$API_CFG"
-            echo "Fixed api_config.dart"
-          fi
-
-          # Fix location_service.dart
-          LOC_FILE="lib/services/location_service.dart"
-          if [ -f "$LOC_FILE" ]; then
-            sed -i '' 's/ApiConfig.GPS_DISTANCE_FILTER_METERS.toInt()/ApiConfig.GPS_DISTANCE_FILTER_METERS/g' "$LOC_FILE"
-            sed -i '' 's/locationSettings: const LocationSettings(/desiredAccuracy: LocationAccuracy.high,/' "$LOC_FILE"
-            sed -i '' '/accuracy: LocationAccuracy.high,$/d' "$LOC_FILE"
-            sed -i '' '/timeLimit: Duration(seconds: 10),$/s//timeLimit: Duration(seconds: 10),/' "$LOC_FILE"
-            sed -i '' 's/        ),$/      );/' "$LOC_FILE"
-            echo "Fixed location_service.dart"
+            echo "✅ Fixed api_config.dart"
           fi
 
           echo "=== All Dart fixes complete ==="
