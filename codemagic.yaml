@@ -8,7 +8,7 @@ workflows:
       flutter: stable
       # ============================================================
       # Firebase config - set these as environment variables in
-      # Codemagic UI → App Settings → Environment variables
+      # Codemagic UI -> App Settings -> Environment variables
       # ============================================================
       # GOOGLE_SERVICES_JSON: (paste entire google-services.json content)
       # FIREBASE_ANDROID_API_KEY: AIzaSy...
@@ -34,17 +34,12 @@ workflows:
             cp -r assets/ /tmp/fresh_project/assets/
           fi
 
-          # ============================================================
           # Write google-services.json from environment variable
-          # This is required for Firebase Auth and FCM to work
-          # ============================================================
           if [ -n "$GOOGLE_SERVICES_JSON" ]; then
             echo "$GOOGLE_SERVICES_JSON" > /tmp/fresh_project/android/app/google-services.json
             echo "google-services.json written from environment variable"
           else
             echo "WARNING: GOOGLE_SERVICES_JSON not set. Firebase will NOT work."
-            echo "Set it in Codemagic UI → App Settings → Environment variables"
-            # Create a minimal placeholder so the build doesn't fail
             cat > /tmp/fresh_project/android/app/google-services.json << 'GSEOF'
           {
             "project_info": {
@@ -104,7 +99,6 @@ workflows:
                           <category android:name="android.intent.category.LAUNCHER"/>
                       </intent-filter>
                   </activity>
-                  <!-- Firebase Messaging Service -->
                   <service
                       android:name="com.google.firebase.messaging.FirebaseMessagingService"
                       android:exported="false">
@@ -168,7 +162,6 @@ workflows:
               print(content)
               print(f"--- END ORIGINAL ---")
 
-              # --- Add google-services plugin for Firebase ---
               if 'com.google.gms.google-services' not in content:
                   if kts:
                       content = content.rstrip() + '\n\napply(plugin = "com.google.gms.google-services")\n'
@@ -182,7 +175,6 @@ workflows:
                           content = "apply plugin: 'com.google.gms.google-services'\n" + content
                       print("Added google-services plugin (Groovy DSL)")
 
-              # --- Fix compileSdk ---
               if kts:
                   content = re.sub(r'compileSdk\s*=\s*flutter\.compileSdkVersion', 'compileSdk = 36', content)
                   content = re.sub(r'compileSdk\s*=\s*\d+', 'compileSdk = 36', content)
@@ -194,7 +186,6 @@ workflows:
                   content = re.sub(r'targetSdk\s+flutter\.targetSdkVersion', 'targetSdk 36', content)
                   content = re.sub(r'targetSdk\s+\d+', 'targetSdk 36', content)
 
-              # --- Add desugaring to compileOptions ---
               if 'isCoreLibraryDesugaringEnabled' not in content and 'coreLibraryDesugaringEnabled' not in content:
                   if kts:
                       content = content.replace(
@@ -208,7 +199,6 @@ workflows:
                       )
                   print("Added isCoreLibraryDesugaringEnabled")
 
-              # --- Add desugaring dependency ---
               if 'desugar_jdk_libs' not in content:
                   if 'dependencies {' in content:
                       content = content.replace(
@@ -223,7 +213,6 @@ workflows:
                           content = content.rstrip() + '\n\ndependencies {\n    coreLibraryDesugaring "com.android.tools:desugar_jdk_libs:2.1.4"\n}\n'
                       print("Appended new dependencies block with desugaring")
 
-              # --- Add shrinkResources false in buildTypes ---
               if 'shrinkResources' not in content:
                   if kts:
                       content = content.replace(
@@ -236,7 +225,6 @@ workflows:
                           'minifyEnabled false\n            shrinkResources false'
                       )
 
-              # --- Fix JVM target to 17 for both Java and Kotlin ---
               content = content.replace('JavaVersion.VERSION_1_8', 'JavaVersion.VERSION_17')
               content = content.replace('jvmTarget = "1.8"', 'jvmTarget = "17"')
               if 'kotlinOptions' not in content and 'compileOptions' in content:
@@ -252,7 +240,6 @@ workflows:
               print(content)
               print(f"--- END PATCHED ---")
 
-              # Verify critical patches
               assert 'compileSdk = 36' in content or 'compileSdk 36' in content, "compileSdk 36 not found!"
               assert 'desugar_jdk_libs' in content, "desugar_jdk_libs dependency not found!"
               assert 'google-services' in content, "google-services plugin not found!"
@@ -301,7 +288,6 @@ workflows:
 
                           changed = False
 
-                          # Upgrade compileSdk
                           new_content = re.sub(r'compileSdk\s+\d+', 'compileSdk 36', plugin_content)
                           if new_content != plugin_content:
                               plugin_content = new_content
@@ -312,7 +298,6 @@ workflows:
                               plugin_content = new_content
                               changed = True
 
-                          # Add namespace if missing
                           if 'namespace' not in plugin_content:
                               manifest_dir = os.path.join(os.path.dirname(fpath), 'src', 'main')
                               manifest_path = os.path.join(manifest_dir, 'AndroidManifest.xml')
@@ -369,239 +354,269 @@ workflows:
           set -e
           echo "Fixing Dart code issues..."
 
+          python3 << 'PYEOF'
+          import os, re
+
           # ============================================================
           # FIX 1: Create CartProvider if missing
-          # Error: 'CartProvider' isn't a type (search_screen.dart)
+          # Error: CartProvider isnt a type (search_screen.dart)
           # ============================================================
-          PROVIDERS_DIR="lib/providers"
-          mkdir -p "$PROVIDERS_DIR"
-          if [ ! -f "$PROVIDERS_DIR/cart_provider.dart" ]; then
-            cat > "$PROVIDERS_DIR/cart_provider.dart" << 'CART_EOF'
-import 'package:flutter/foundation.dart';
+          providers_dir = "lib/providers"
+          os.makedirs(providers_dir, exist_ok=True)
+          cart_provider_path = os.path.join(providers_dir, "cart_provider.dart")
 
-class CartProvider with ChangeNotifier {
-  final Map<String, int> _items = {};
-
-  Map<String, int> get items => {..._items};
-
-  int get itemCount => _items.length;
-
-  void addItem(String productId, int quantity) {
-    if (_items.containsKey(productId)) {
-      _items[productId] = _items[productId]! + quantity;
-    } else {
-      _items[productId] = quantity;
-    }
-    notifyListeners();
-  }
-
-  void removeItem(String productId) {
-    _items.remove(productId);
-    notifyListeners();
-  }
-
-  void updateQuantity(String productId, int quantity) {
-    if (quantity <= 0) {
-      _items.remove(productId);
-    } else {
-      _items[productId] = quantity;
-    }
-    notifyListeners();
-  }
-
-  void clear() {
-    _items.clear();
-    notifyListeners();
-  }
-}
-CART_EOF
-            echo "✅ Created: cart_provider.dart"
-          else
-            echo "✅ cart_provider.dart already exists"
-          fi
+          if not os.path.exists(cart_provider_path):
+              cart_provider_code = (
+                  "import 'package:flutter/foundation.dart';\n"
+                  "\n"
+                  "class CartProvider with ChangeNotifier {\n"
+                  "  final Map<String, int> _items = {};\n"
+                  "\n"
+                  "  Map<String, int> get items => {..._items};\n"
+                  "\n"
+                  "  int get itemCount => _items.length;\n"
+                  "\n"
+                  "  void addItem(String productId, int quantity) {\n"
+                  "    if (_items.containsKey(productId)) {\n"
+                  "      _items[productId] = _items[productId]! + quantity;\n"
+                  "    } else {\n"
+                  "      _items[productId] = quantity;\n"
+                  "    }\n"
+                  "    notifyListeners();\n"
+                  "  }\n"
+                  "\n"
+                  "  void removeItem(String productId) {\n"
+                  "    _items.remove(productId);\n"
+                  "    notifyListeners();\n"
+                  "  }\n"
+                  "\n"
+                  "  void updateQuantity(String productId, int quantity) {\n"
+                  "    if (quantity <= 0) {\n"
+                  "      _items.remove(productId);\n"
+                  "    } else {\n"
+                  "      _items[productId] = quantity;\n"
+                  "    }\n"
+                  "    notifyListeners();\n"
+                  "  }\n"
+                  "\n"
+                  "  void clear() {\n"
+                  "    _items.clear();\n"
+                  "    notifyListeners();\n"
+                  "  }\n"
+                  "}\n"
+              )
+              with open(cart_provider_path, 'w') as f:
+                  f.write(cart_provider_code)
+              print("Created: cart_provider.dart")
+          else:
+              print("cart_provider.dart already exists")
 
           # ============================================================
           # FIX 2: Create OrderTrackingScreen if missing
-          # Error: 'OrderTrackingScreen' isn't defined (orders_screen.dart)
+          # Error: OrderTrackingScreen isnt defined (orders_screen.dart)
           # ============================================================
-          if [ ! -f "lib/screens/order_tracking_screen.dart" ]; then
-            cat > "lib/screens/order_tracking_screen.dart" << 'TRACK_EOF'
-import 'package:flutter/material.dart';
+          order_tracking_path = "lib/screens/order_tracking_screen.dart"
 
-class OrderTrackingScreen extends StatelessWidget {
-  final String orderId;
-
-  const OrderTrackingScreen({
-    Key? key,
-    required this.orderId,
-  }) : super(key: key);
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: Text('Track Order #$orderId'),
-      ),
-      body: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const Icon(Icons.local_shipping, size: 64, color: Colors.blue),
-            const SizedBox(height: 16),
-            Text(
-              'Order #$orderId',
-              style: Theme.of(context).textTheme.headlineSmall,
-            ),
-            const SizedBox(height: 8),
-            const Text('Tracking information will appear here'),
-          ],
-        ),
-      ),
-    );
-  }
-}
-TRACK_EOF
-            echo "✅ Created: order_tracking_screen.dart"
-          else
-            echo "✅ order_tracking_screen.dart already exists"
-          fi
+          if not os.path.exists(order_tracking_path):
+              order_tracking_code = (
+                  "import 'package:flutter/material.dart';\n"
+                  "\n"
+                  "class OrderTrackingScreen extends StatelessWidget {\n"
+                  "  final String orderId;\n"
+                  "\n"
+                  "  const OrderTrackingScreen({\n"
+                  "    Key? key,\n"
+                  "    required this.orderId,\n"
+                  "  }) : super(key: key);\n"
+                  "\n"
+                  "  @override\n"
+                  "  Widget build(BuildContext context) {\n"
+                  "    return Scaffold(\n"
+                  "      appBar: AppBar(\n"
+                  "        title: Text('Track Order #' + orderId),\n"
+                  "      ),\n"
+                  "      body: Center(\n"
+                  "        child: Column(\n"
+                  "          mainAxisAlignment: MainAxisAlignment.center,\n"
+                  "          children: [\n"
+                  "            const Icon(Icons.local_shipping, size: 64, color: Colors.blue),\n"
+                  "            const SizedBox(height: 16),\n"
+                  "            Text(\n"
+                  "              'Order #' + orderId,\n"
+                  "              style: Theme.of(context).textTheme.headlineSmall,\n"
+                  "            ),\n"
+                  "            const SizedBox(height: 8),\n"
+                  "            const Text('Tracking information will appear here'),\n"
+                  "          ],\n"
+                  "        ),\n"
+                  "      ),\n"
+                  "    );\n"
+                  "  }\n"
+                  "}\n"
+              )
+              with open(order_tracking_path, 'w') as f:
+                  f.write(order_tracking_code)
+              print("Created: order_tracking_screen.dart")
+          else:
+              print("order_tracking_screen.dart already exists")
 
           # ============================================================
           # FIX 3: Add CartProvider import to search_screen.dart
-          # Error: 'CartProvider' isn't a type (search_screen.dart:551)
           # ============================================================
-          SEARCH_FILE="lib/screens/search_screen.dart"
-          if [ -f "$SEARCH_FILE" ]; then
-            if ! grep -q "cart_provider.dart" "$SEARCH_FILE"; then
-              sed -i '' "1s/^/import '..\/providers\/cart_provider.dart';\n/" "$SEARCH_FILE"
-              echo "✅ Added CartProvider import to search_screen.dart"
-            else
-              echo "✅ CartProvider import already in search_screen.dart"
-            fi
-          fi
+          search_file = "lib/screens/search_screen.dart"
+          if os.path.exists(search_file):
+              with open(search_file, 'r') as f:
+                  content = f.read()
+              if "cart_provider.dart" not in content:
+                  content = "import '../providers/cart_provider.dart';\n" + content
+                  with open(search_file, 'w') as f:
+                      f.write(content)
+                  print("Added CartProvider import to search_screen.dart")
+              else:
+                  print("CartProvider import already in search_screen.dart")
 
           # ============================================================
-          # FIX 4: Replace 'mounted' with 'context.mounted' in cart_screen.dart
-          # Error: The getter 'mounted' isn't defined for '_CartItemCard'
+          # FIX 4: Replace mounted with context.mounted in cart_screen.dart
+          # Error: getter mounted not defined for _CartItemCard
           # ============================================================
-          CART_FILE="lib/screens/cart_screen.dart"
-          if [ -f "$CART_FILE" ]; then
-            sed -i '' 's/if (mounted)/if (context.mounted)/g' "$CART_FILE"
-            echo "✅ Fixed mounted → context.mounted in cart_screen.dart"
-          fi
+          cart_file = "lib/screens/cart_screen.dart"
+          if os.path.exists(cart_file):
+              with open(cart_file, 'r') as f:
+                  content = f.read()
+              content = content.replace("if (mounted)", "if (context.mounted)")
+              with open(cart_file, 'w') as f:
+                  f.write(content)
+              print("Fixed mounted -> context.mounted in cart_screen.dart")
 
           # ============================================================
           # FIX 5: Add OrderTrackingScreen import to orders_screen.dart
-          # Error: 'OrderTrackingScreen' isn't defined (orders_screen.dart:282)
           # ============================================================
-          ORDERS_FILE="lib/screens/orders_screen.dart"
-          if [ -f "$ORDERS_FILE" ]; then
-            if ! grep -q "order_tracking_screen.dart" "$ORDERS_FILE"; then
-              sed -i '' "1s/^/import 'order_tracking_screen.dart';\n/" "$ORDERS_FILE"
-              echo "✅ Added OrderTrackingScreen import to orders_screen.dart"
-            else
-              echo "✅ OrderTrackingScreen import already in orders_screen.dart"
-            fi
-          fi
+          orders_file = "lib/screens/orders_screen.dart"
+          if os.path.exists(orders_file):
+              with open(orders_file, 'r') as f:
+                  content = f.read()
+              if "order_tracking_screen.dart" not in content:
+                  content = "import 'order_tracking_screen.dart';\n" + content
+                  with open(orders_file, 'w') as f:
+                      f.write(content)
+                  print("Added OrderTrackingScreen import to orders_screen.dart")
+              else:
+                  print("OrderTrackingScreen import already in orders_screen.dart")
 
           # ============================================================
-          # FIX 6: Replace locationSettings with desiredAccuracy in addresses_screen.dart
-          # Error: No named parameter 'locationSettings' (addresses_screen.dart:568)
-          # geolocator 10.x uses desiredAccuracy, not locationSettings
+          # FIX 6: Replace locationSettings with desiredAccuracy
+          # in addresses_screen.dart (geolocator 10.x)
           # ============================================================
-          ADDR_FILE="lib/screens/addresses_screen.dart"
-          if [ -f "$ADDR_FILE" ]; then
-            # Replace the locationSettings block with desiredAccuracy
-            # This handles the pattern: locationSettings: const LocationSettings(\n accuracy: LocationAccuracy.high,\n distanceFilter: N,\n ),
-            sed -i '' 's/locationSettings: const LocationSettings(/desiredAccuracy: LocationAccuracy.high,/' "$ADDR_FILE"
-            # Remove lines that were inside the LocationSettings() constructor
-            sed -i '' '/accuracy: LocationAccuracy.high,$/d' "$ADDR_FILE"
-            sed -i '' '/distanceFilter: [0-9]*,$/d' "$ADDR_FILE"
-            # Clean up leftover closing paren from LocationSettings(
-            # The pattern "), $" becomes just ")"
-            sed -i '' 's/),$/)/' "$ADDR_FILE"
-            echo "✅ Fixed locationSettings → desiredAccuracy in addresses_screen.dart"
-          fi
+          addr_file = "lib/screens/addresses_screen.dart"
+          if os.path.exists(addr_file):
+              with open(addr_file, 'r') as f:
+                  content = f.read()
+              content = re.sub(
+                  r'locationSettings:\s*const\s*LocationSettings\s*\([^)]*\)',
+                  'desiredAccuracy: LocationAccuracy.high',
+                  content,
+                  flags=re.DOTALL
+              )
+              with open(addr_file, 'w') as f:
+                  f.write(content)
+              print("Fixed locationSettings -> desiredAccuracy in addresses_screen.dart")
 
-          # ============================================================
-          # Also fix the same locationSettings issue in location_service.dart
-          # if the customer app has one (same pattern as rider app)
-          # ============================================================
-          LOC_FILE="lib/services/location_service.dart"
-          if [ -f "$LOC_FILE" ]; then
-            sed -i '' 's/locationSettings: const LocationSettings(/desiredAccuracy: LocationAccuracy.high,/' "$LOC_FILE"
-            sed -i '' '/accuracy: LocationAccuracy.high,$/d' "$LOC_FILE"
-            sed -i '' '/distanceFilter: [0-9]*,$/d' "$LOC_FILE"
-            sed -i '' 's/),$/)/' "$LOC_FILE"
-            echo "✅ Fixed locationSettings in location_service.dart"
-          fi
+          # Also fix location_service.dart if it exists
+          loc_file = "lib/services/location_service.dart"
+          if os.path.exists(loc_file):
+              with open(loc_file, 'r') as f:
+                  content = f.read()
+              content = re.sub(
+                  r'locationSettings:\s*const\s*LocationSettings\s*\([^)]*\)',
+                  'desiredAccuracy: LocationAccuracy.high',
+                  content,
+                  flags=re.DOTALL
+              )
+              with open(loc_file, 'w') as f:
+                  f.write(content)
+              print("Fixed locationSettings in location_service.dart")
 
           # ============================================================
           # Update firebase_options.dart with real values from env vars
           # ============================================================
-          FIREBASE_OPTS="lib/firebase_options.dart"
-          if [ -f "$FIREBASE_OPTS" ]; then
-            if [ -n "$FIREBASE_ANDROID_API_KEY" ]; then
-              sed -i '' "s/YOUR_ANDROID_API_KEY/$FIREBASE_ANDROID_API_KEY/" "$FIREBASE_OPTS"
-              sed -i '' "s/YOUR_ANDROID_APP_ID/$FIREBASE_ANDROID_APP_ID/" "$FIREBASE_OPTS"
-              sed -i '' "s/YOUR_SENDER_ID/$FIREBASE_MESSAGING_SENDER_ID/" "$FIREBASE_OPTS"
-              sed -i '' "s/YOUR_PROJECT_ID/$FIREBASE_PROJECT_ID/" "$FIREBASE_OPTS"
-              sed -i '' "s/YOUR_PROJECT_ID.appspot.com/$FIREBASE_STORAGE_BUCKET/" "$FIREBASE_OPTS"
-              echo "Firebase options updated from environment variables"
-            else
-              echo "WARNING: Firebase env vars not set. Using placeholder values."
-              echo "Set these in Codemagic: FIREBASE_ANDROID_API_KEY, FIREBASE_ANDROID_APP_ID, etc."
-            fi
-          fi
+          firebase_opts = "lib/firebase_options.dart"
+          if os.path.exists(firebase_opts):
+              api_key = os.environ.get("FIREBASE_ANDROID_API_KEY", "")
+              if api_key:
+                  with open(firebase_opts, 'r') as f:
+                      content = f.read()
+                  content = content.replace("YOUR_ANDROID_API_KEY", api_key)
+                  content = content.replace("YOUR_ANDROID_APP_ID", os.environ.get("FIREBASE_ANDROID_APP_ID", ""))
+                  content = content.replace("YOUR_SENDER_ID", os.environ.get("FIREBASE_MESSAGING_SENDER_ID", ""))
+                  content = content.replace("YOUR_PROJECT_ID", os.environ.get("FIREBASE_PROJECT_ID", ""))
+                  content = content.replace("YOUR_PROJECT_ID.appspot.com", os.environ.get("FIREBASE_STORAGE_BUCKET", ""))
+                  with open(firebase_opts, 'w') as f:
+                      f.write(content)
+                  print("Firebase options updated from environment variables")
+              else:
+                  print("WARNING: Firebase env vars not set. Using placeholder values.")
 
           # ============================================================
-          # Fix CardTheme → CardThemeData in main.dart
+          # Fix CardTheme -> CardThemeData in main.dart
+          # Also add CartProvider and provider imports
           # ============================================================
-          MAIN_FILE="lib/main.dart"
-          if [ -f "$MAIN_FILE" ]; then
-            sed -i '' 's/CardTheme(/CardThemeData(/' "$MAIN_FILE"
-            # Also add CartProvider import to main.dart if missing
-            if ! grep -q "cart_provider.dart" "$MAIN_FILE"; then
-              sed -i '' "1s/^/import 'providers\/cart_provider.dart';\n/" "$MAIN_FILE"
-              echo "✅ Added CartProvider import to main.dart"
-            fi
-            # Add provider package import if missing
-            if ! grep -q "package:provider" "$MAIN_FILE"; then
-              sed -i '' "1s/^/import 'package:provider\/provider.dart';\n/" "$MAIN_FILE"
-              echo "✅ Added provider import to main.dart"
-            fi
-            echo "✅ Fixed main.dart"
-          fi
+          main_file = "lib/main.dart"
+          if os.path.exists(main_file):
+              with open(main_file, 'r') as f:
+                  content = f.read()
+              content = content.replace("CardTheme(", "CardThemeData(")
+              if "cart_provider.dart" not in content:
+                  content = "import 'providers/cart_provider.dart';\n" + content
+                  print("Added CartProvider import to main.dart")
+              if "package:provider" not in content:
+                  content = "import 'package:provider/provider.dart';\n" + content
+                  print("Added provider import to main.dart")
+              with open(main_file, 'w') as f:
+                  f.write(content)
+              print("Fixed main.dart")
 
           # ============================================================
           # Fix push_notification_service.dart
           # ============================================================
-          PUSH_FILE="lib/services/push_notification_service.dart"
-          if [ -f "$PUSH_FILE" ]; then
-            sed -i '' 's/const AndroidNotificationDetails androidDetails/AndroidNotificationDetails androidDetails/' "$PUSH_FILE"
-            sed -i '' 's/const NotificationDetails details/NotificationDetails details/' "$PUSH_FILE"
-            echo "✅ Fixed push_notification_service.dart"
-          fi
+          push_file = "lib/services/push_notification_service.dart"
+          if os.path.exists(push_file):
+              with open(push_file, 'r') as f:
+                  content = f.read()
+              content = content.replace("const AndroidNotificationDetails androidDetails", "AndroidNotificationDetails androidDetails")
+              content = content.replace("const NotificationDetails details", "NotificationDetails details")
+              with open(push_file, 'w') as f:
+                  f.write(content)
+              print("Fixed push_notification_service.dart")
 
           # ============================================================
           # Fix api_service.dart
           # ============================================================
-          API_FILE="lib/services/api_service.dart"
-          if [ -f "$API_FILE" ]; then
-            sed -i '' 's/StorageService()/StorageService.instance/' "$API_FILE"
-            echo "✅ Fixed api_service.dart"
-          fi
+          api_file = "lib/services/api_service.dart"
+          if os.path.exists(api_file):
+              with open(api_file, 'r') as f:
+                  content = f.read()
+              content = content.replace("StorageService()", "StorageService.instance")
+              with open(api_file, 'w') as f:
+                  f.write(content)
+              print("Fixed api_service.dart")
 
           # ============================================================
           # Fix api_config.dart
           # ============================================================
-          API_CFG="lib/config/api_config.dart"
-          if [ -f "$API_CFG" ]; then
-            sed -i '' 's/static const double GPS_DISTANCE_FILTER_METERS = 5.0;/static const int GPS_DISTANCE_FILTER_METERS = 5;/' "$API_CFG"
-            echo "✅ Fixed api_config.dart"
-          fi
+          api_cfg = "lib/config/api_config.dart"
+          if os.path.exists(api_cfg):
+              with open(api_cfg, 'r') as f:
+                  content = f.read()
+              content = content.replace(
+                  "static const double GPS_DISTANCE_FILTER_METERS = 5.0;",
+                  "static const int GPS_DISTANCE_FILTER_METERS = 5;"
+              )
+              with open(api_cfg, 'w') as f:
+                  f.write(content)
+              print("Fixed api_config.dart")
 
-          echo "=== All Dart fixes complete ==="
+          print("=== All Dart fixes complete ===")
+          PYEOF
 
       - name: Re-get packages after pubspec fix
         script: flutter pub get
