@@ -572,16 +572,41 @@ workflows:
               if "package:provider" not in content:
                   content = "import 'package:provider/provider.dart';\n" + content
                   print("Added provider import to main.dart")
-              # FIX NEW: const map with CupertinoPageTransitionsBuilder
-              # Remove const keyword from pageTransitionsTheme map literal
-              # because CupertinoPageTransitionsBuilder() is not const
+              # FIX: const expression with CupertinoPageTransitionsBuilder
+              # CupertinoPageTransitionsBuilder() is not const, so the const
+              # keyword must be removed from the enclosing constructor
+              # Pattern 1: const PageTransitionsTheme( -> PageTransitionsTheme(
+              content = content.replace(
+                  "const PageTransitionsTheme(",
+                  "PageTransitionsTheme("
+              )
+              # Pattern 2: const <TargetPlatform, PageTransitionsBuilder>{
               content = content.replace(
                   "const <TargetPlatform, PageTransitionsBuilder>{",
                   "<TargetPlatform, PageTransitionsBuilder>{"
               )
+              # Pattern 3: const ThemeData( or other const wrapping it
+              if "const ThemeData(" in content and "CupertinoPageTransitionsBuilder" in content:
+                  content = content.replace("const ThemeData(", "ThemeData(")
+              # Pattern 4: Aggressive fallback - find any remaining const before
+              # a map/constructor that contains CupertinoPageTransitionsBuilder
+              # Use regex to find const followed by any widget constructor on a line
+              # near CupertinoPageTransitionsBuilder usage
+              lines = content.split('\n')
+              new_lines = []
+              in_page_transitions = False
+              for line in lines:
+                  if 'PageTransitionsTheme' in line or 'pageTransitionsTheme' in line:
+                      in_page_transitions = True
+                  if in_page_transitions and line.strip().startswith('const '):
+                      line = line.replace('const ', '', 1)
+                  if in_page_transitions and '},' in line:
+                      in_page_transitions = False
+                  new_lines.append(line)
+              content = '\n'.join(new_lines)
               with open(main_file, 'w') as f:
                   f.write(content)
-              print("Fixed main.dart (CardTheme, const map, imports)")
+              print("Fixed main.dart (CardTheme, const fixes, imports)")
 
           # ============================================================
           # Fix push_notification_service.dart
