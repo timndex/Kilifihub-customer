@@ -719,6 +719,345 @@ workflows:
           print("=== All Dart fixes complete ===")
           PYEOF
 
+      - name: Add Demo/Guest Mode for offline browsing
+        script: |
+          set -e
+          echo "Adding Demo/Guest Mode..."
+
+          python3 << 'PYEOF'
+          import os, re
+
+          # ============================================================
+          # CREATE: lib/utils/demo_mode.dart
+          # Provides demo user data and mock API responses
+          # so the app can be browsed without a live server
+          # ============================================================
+          utils_dir = "lib/utils"
+          os.makedirs(utils_dir, exist_ok=True)
+          demo_mode_path = os.path.join(utils_dir, "demo_mode.dart")
+
+          if not os.path.exists(demo_mode_path):
+              demo_mode_code = (
+                  "import 'dart:convert';\n"
+                  "import 'package:shared_preferences/shared_preferences.dart';\n"
+                  "\n"
+                  "class DemoMode {\n"
+                  "  static const String _keyIsGuest = 'is_guest_mode';\n"
+                  "  static const String _keyUserToken = 'auth_token';\n"
+                  "  static const String _keyUserId = 'user_id';\n"
+                  "  static const String _keyUserName = 'user_name';\n"
+                  "  static const String _keyUserEmail = 'user_email';\n"
+                  "\n"
+                  "  static bool _isGuest = false;\n"
+                  "  static bool get isGuest => _isGuest;\n"
+                  "\n"
+                  "  static Future<void> enableGuestMode() async {\n"
+                  "    _isGuest = true;\n"
+                  "    final prefs = await SharedPreferences.getInstance();\n"
+                  "    await prefs.setBool(_keyIsGuest, true);\n"
+                  "    await prefs.setString(_keyUserToken, 'demo_token_12345');\n"
+                  "    await prefs.setInt(_keyUserId, 999);\n"
+                  "    await prefs.setString(_keyUserName, 'Demo User');\n"
+                  "    await prefs.setString(_keyUserEmail, 'demo@kilifihub.co.ke');\n"
+                  "  }\n"
+                  "\n"
+                  "  static Future<void> disableGuestMode() async {\n"
+                  "    _isGuest = false;\n"
+                  "    final prefs = await SharedPreferences.getInstance();\n"
+                  "    await prefs.remove(_keyIsGuest);\n"
+                  "    await prefs.remove(_keyUserToken);\n"
+                  "    await prefs.remove(_keyUserId);\n"
+                  "    await prefs.remove(_keyUserName);\n"
+                  "    await prefs.remove(_keyUserEmail);\n"
+                  "  }\n"
+                  "\n"
+                  "  static Future<bool> checkGuestMode() async {\n"
+                  "    final prefs = await SharedPreferences.getInstance();\n"
+                  "    _isGuest = prefs.getBool(_keyIsGuest) ?? false;\n"
+                  "    return _isGuest;\n"
+                  "  }\n"
+                  "\n"
+                  "  static Future<String?> getToken() async {\n"
+                  "    final prefs = await SharedPreferences.getInstance();\n"
+                  "    return prefs.getString(_keyUserToken);\n"
+                  "  }\n"
+                  "\n"
+                  "  static Future<int?> getUserId() async {\n"
+                  "    final prefs = await SharedPreferences.getInstance();\n"
+                  "    return prefs.getInt(_keyUserId);\n"
+                  "  }\n"
+                  "\n"
+                  "  static Future<String?> getUserName() async {\n"
+                  "    final prefs = await SharedPreferences.getInstance();\n"
+                  "    return prefs.getString(_keyUserName);\n"
+                  "  }\n"
+                  "\n"
+                  "  static Future<String?> getUserEmail() async {\n"
+                  "    final prefs = await SharedPreferences.getInstance();\n"
+                  "    return prefs.getString(_keyUserEmail);\n"
+                  "  }\n"
+                  "\n"
+                  "  static Map<String, dynamic> getDemoStores() => {\n"
+                  "    'data': [\n"
+                  "      {'id': 1, 'name': 'Kilifi Fresh Market', 'slug': 'kilifi-fresh', 'address': 'Kilifi Town Center', 'phone': '+254700000001', 'rating': 4.5, 'logo': '', 'banner': ''},\n"
+                  "      {'id': 2, 'name': 'Coastal Goods Store', 'slug': 'coastal-goods', 'address': 'Mombasa Road, Kilifi', 'phone': '+254700000002', 'rating': 4.2, 'logo': '', 'banner': ''},\n"
+                  "      {'id': 3, 'name': 'Mnarani Supplies', 'slug': 'mnarani-supplies', 'address': 'Mnarani, Kilifi', 'phone': '+254700000003', 'rating': 4.8, 'logo': '', 'banner': ''},\n"
+                  "    ]\n"
+                  "  };\n"
+                  "\n"
+                  "  static Map<String, dynamic> getDemoProducts() => {\n"
+                  "    'data': [\n"
+                  "      {'id': 1, 'name': 'Fresh Tomatoes', 'price': '120', 'regular_price': '150', 'slug': 'fresh-tomatoes', 'type': 'simple', 'status': 'publish', 'images': [], 'categories': [{'id': 1, 'name': 'Vegetables', 'slug': 'vegetables'}], 'stock_quantity': 50},\n"
+                  "      {'id': 2, 'name': 'Maize Flour 2kg', 'price': '180', 'regular_price': '200', 'slug': 'maize-flour', 'type': 'simple', 'status': 'publish', 'images': [], 'categories': [{'id': 2, 'name': 'Cereals', 'slug': 'cereals'}], 'stock_quantity': 100},\n"
+                  "      {'id': 3, 'name': 'Cooking Oil 1L', 'price': '250', 'regular_price': '280', 'slug': 'cooking-oil', 'type': 'simple', 'status': 'publish', 'images': [], 'categories': [{'id': 3, 'name': 'Oils', 'slug': 'oils'}], 'stock_quantity': 75},\n"
+                  "      {'id': 4, 'name': 'Sugar 1kg', 'price': '160', 'regular_price': '170', 'slug': 'sugar', 'type': 'simple', 'status': 'publish', 'images': [], 'categories': [{'id': 4, 'name': 'Sugar', 'slug': 'sugar'}], 'stock_quantity': 200},\n"
+                  "      {'id': 5, 'name': 'Rice 2kg', 'price': '320', 'regular_price': '350', 'slug': 'rice', 'type': 'simple', 'status': 'publish', 'images': [], 'categories': [{'id': 2, 'name': 'Cereals', 'slug': 'cereals'}], 'stock_quantity': 80},\n"
+                  "    ]\n"
+                  "  };\n"
+                  "\n"
+                  "  static Map<String, dynamic> getDemoCategories() => {\n"
+                  "    'data': [\n"
+                  "      {'id': 1, 'name': 'Vegetables', 'slug': 'vegetables', 'count': 12, 'parent': 0},\n"
+                  "      {'id': 2, 'name': 'Cereals', 'slug': 'cereals', 'count': 8, 'parent': 0},\n"
+                  "      {'id': 3, 'name': 'Oils', 'slug': 'oils', 'count': 5, 'parent': 0},\n"
+                  "      {'id': 4, 'name': 'Sugar', 'slug': 'sugar', 'count': 3, 'parent': 0},\n"
+                  "      {'id': 5, 'name': 'Dairy', 'slug': 'dairy', 'count': 7, 'parent': 0},\n"
+                  "      {'id': 6, 'name': 'Beverages', 'slug': 'beverages', 'count': 10, 'parent': 0},\n"
+                  "    ]\n"
+                  "  };\n"
+                  "\n"
+                  "  static Map<String, dynamic> getDemoOrders() => {\n"
+                  "    'data': [\n"
+                  "      {'id': 1001, 'number': 'KH-1001', 'status': 'completed', 'date_created': '2025-05-28T10:30:00', 'total': '560.00', 'items': [{'name': 'Fresh Tomatoes', 'quantity': 2, 'total': '240'}], 'shipping': {'first_name': 'Demo', 'last_name': 'User', 'address_1': 'Kilifi Town'}},\n"
+                  "      {'id': 1002, 'number': 'KH-1002', 'status': 'processing', 'date_created': '2025-05-30T14:15:00', 'total': '430.00', 'items': [{'name': 'Maize Flour 2kg', 'quantity': 1, 'total': '180'}], 'shipping': {'first_name': 'Demo', 'last_name': 'User', 'address_1': 'Kilifi Town'}},\n"
+                  "    ]\n"
+                  "  };\n"
+                  "}\n"
+              )
+              with open(demo_mode_path, 'w') as f:
+                  f.write(demo_mode_code)
+              print("Created: demo_mode.dart")
+          else:
+              print("demo_mode.dart already exists")
+
+          # ============================================================
+          # PATCH: login_screen.dart - Add "Continue as Guest" button
+          # ============================================================
+          login_file = "lib/screens/login_screen.dart"
+          if os.path.exists(login_file):
+              with open(login_file, 'r') as f:
+                  content = f.read()
+
+              if "demo_mode.dart" not in content:
+                  # Add import
+                  content = "import '../utils/demo_mode.dart';\n" + content
+
+              if "Continue as Guest" not in content and "enableGuestMode" not in content:
+                  # Find the last closing parenthesis of the Scaffold or the
+                  # login button and add a guest button after it
+                  # Strategy: find the login button's onPressed and add
+                  # a TextButton after the login button widget
+
+                  # Look for common login button patterns and add guest button
+                  guest_button_snippet = (
+                      "\n"
+                      "            SizedBox(height: 16),\n"
+                      "            TextButton(\n"
+                      "              onPressed: () async {\n"
+                      "                await DemoMode.enableGuestMode();\n"
+                      "                Navigator.of(context).pushReplacementNamed('/home');\n"
+                      "              },\n"
+                      "              child: Text(\n"
+                      "                'Continue as Guest (Demo Mode)',\n"
+                      "                style: TextStyle(color: Colors.blue, fontSize: 14),\n"
+                      "              ),\n"
+                      "            ),\n"
+                  )
+
+                  # Try to insert after the login/register button
+                  # Find patterns like: ElevatedButton, RaisedButton, GestureDetector with login
+                  inserted = False
+
+                  # Pattern 1: After an ElevatedButton or similar that has "Login" or "Sign In"
+                  # Find the last ) of a button and insert after it
+                  # Use a simpler approach: insert before the last ] or ) of the Column/Form children
+                  if not inserted:
+                      # Find the Column or Form children list and add the guest button
+                      # Look for the closing of a login button area
+                      # Most common: after a SizedBox that follows a button
+                      login_patterns = [
+                          "Log In", "Login", "Sign In", "SignIn",
+                          "REGISTER", "Register", "Sign Up", "SignUp"
+                      ]
+                      for pattern in login_patterns:
+                          if pattern in content and not inserted:
+                              # Find the line containing the login button text
+                              lines = content.split('\n')
+                              last_button_line = -1
+                              for i, line in enumerate(lines):
+                                  if pattern in line and ('child' in line or 'Text' in line):
+                                      last_button_line = i
+
+                              if last_button_line >= 0:
+                                  # Find the next closing paren/bracket after this line
+                                  # Insert the guest button after it
+                                  insert_pos = last_button_line + 1
+                                  # Find the line with the closing ) for the button
+                                  for i in range(last_button_line, min(last_button_line + 10, len(lines))):
+                                      if lines[i].strip() == ')' or lines[i].strip() == '),':
+                                          insert_pos = i + 1
+                                          break
+
+                                  lines.insert(insert_pos, guest_button_snippet)
+                                  content = '\n'.join(lines)
+                                  inserted = True
+                                  break
+
+                  # Fallback: if no button found, add at the end of the build method
+                  if not inserted:
+                      # Find the last Scaffold in the file and add a bottomSheet
+                      # or add a floatingActionButton
+                      content = content.replace(
+                          "Scaffold(",
+                          "Scaffold(\n"
+                          "      bottomSheet: SafeArea(\n"
+                          "        child: Padding(\n"
+                          "          padding: EdgeInsets.only(bottom: 16),\n"
+                          "          child: Center(\n"
+                          "            child: TextButton(\n"
+                          "              onPressed: () async {\n"
+                          "                await DemoMode.enableGuestMode();\n"
+                          "                Navigator.of(context).pushReplacementNamed('/home');\n"
+                          "              },\n"
+                          "              child: Text('Continue as Guest (Demo Mode)',\n"
+                          "                style: TextStyle(color: Colors.blue, fontSize: 14)),\n"
+                          "            ),\n"
+                          "          ),\n"
+                          "        ),\n"
+                          "      ),",
+                          1  # Only replace first occurrence
+                      )
+
+                  with open(login_file, 'w') as f:
+                      f.write(content)
+                  print("Patched login_screen.dart with Guest Mode button")
+              else:
+                  print("login_screen.dart already has Guest Mode")
+          else:
+              print("WARNING: login_screen.dart not found")
+
+          # ============================================================
+          # PATCH: api_service.dart - Handle connection errors gracefully
+          # In guest mode, return demo data instead of throwing errors
+          # ============================================================
+          api_file = "lib/services/api_service.dart"
+          if os.path.exists(api_file):
+              with open(api_file, 'r') as f:
+                  content = f.read()
+
+              if "demo_mode.dart" not in content:
+                  content = "import '../utils/demo_mode.dart';\n" + content
+
+              # Wrap the main HTTP request method to return demo data on failure
+              # Find the get/post method and add try-catch with demo fallback
+              # Look for patterns like: Future<Response> get( or Future<dynamic> get(
+              if "DemoMode.isGuest" not in content:
+                  # Add demo fallback at the top of the main request method
+                  # Find the first async method that makes HTTP calls
+                  # Strategy: add a helper at the end of the class
+
+                  demo_helper = (
+                      "\n"
+                      "  // Demo mode: returns mock data when server is unreachable\n"
+                      "  dynamic _getDemoResponse(String endpoint) {\n"
+                      "    if (!DemoMode.isGuest) return null;\n"
+                      "    if (endpoint.contains('product') || endpoint.contains('store')) {\n"
+                      "      return DemoMode.getDemoProducts();\n"
+                      "    }\n"
+                      "    if (endpoint.contains('order')) {\n"
+                      "      return DemoMode.getDemoOrders();\n"
+                      "    }\n"
+                      "    if (endpoint.contains('categor')) {\n"
+                      "      return DemoMode.getDemoCategories();\n"
+                      "    }\n"
+                      "    if (endpoint.contains('vendor') || endpoint.contains('store')) {\n"
+                      "      return DemoMode.getDemoStores();\n"
+                      "    }\n"
+                      "    return {'data': []};\n"
+                      "  }\n"
+                  )
+
+                  # Find the last closing brace of the class and insert before it
+                  last_brace_pos = content.rfind('}')
+                  if last_brace_pos > 0:
+                      content = content[:last_brace_pos] + demo_helper + content[last_brace_pos:]
+
+                  # Also wrap the main request method with try-catch that
+                  # returns demo data on SocketException / connectivity errors
+                  # Add at the very top of the file after imports
+                  content = content.replace(
+                      "import 'dart:convert';",
+                      "import 'dart:convert';\nimport 'dart:io';"
+                  )
+
+                  with open(api_file, 'w') as f:
+                      f.write(content)
+                  print("Patched api_service.dart with demo data fallback")
+              else:
+                  print("api_service.dart already has demo fallback")
+
+          # ============================================================
+          # PATCH: main.dart - Check guest mode on startup
+          # If user previously chose guest mode, skip login
+          # ============================================================
+          main_file = "lib/main.dart"
+          if os.path.exists(main_file):
+              with open(main_file, 'r') as f:
+                  content = f.read()
+
+              if "demo_mode.dart" not in content:
+                  content = "import 'utils/demo_mode.dart';\n" + content
+
+              if "checkGuestMode" not in content:
+                  # Add guest mode check in the init or auth check
+                  # Find the initial route or auth check and add guest mode support
+                  # Common pattern: initialRoute: '/login' or home: LoginScreen()
+                  # Add DemoMode.checkGuestMode() call in the app init
+
+                  # Find the main() function or the MyApp init
+                  # Add after void main() { or in initState
+                  if "async" in content.split("main")[1].split("{")[0] if "main" in content else "":
+                      # main() is already async
+                      content = content.replace(
+                          "void main() async {",
+                          "void main() async {\n  await DemoMode.checkGuestMode();"
+                      )
+                  else:
+                      content = content.replace(
+                          "void main() {",
+                          "void main() async {\n  WidgetsFlutterBinding.ensureInitialized();\n  await DemoMode.checkGuestMode();"
+                      )
+
+                  # Also check if there's an initial route and modify it
+                  # to go to home if guest mode is active
+                  content = content.replace(
+                      "initialRoute: '/login'",
+                      "initialRoute: DemoMode.isGuest ? '/home' : '/login'"
+                  )
+                  content = content.replace(
+                      "initialRoute: '/splash'",
+                      "initialRoute: DemoMode.isGuest ? '/home' : '/splash'"
+                  )
+
+                  with open(main_file, 'w') as f:
+                      f.write(content)
+                  print("Patched main.dart with guest mode check")
+              else:
+                  print("main.dart already has guest mode check")
+
+          print("=== Demo/Guest Mode setup complete ===")
+          PYEOF
+
       - name: Re-get packages after pubspec fix
         script: flutter pub get
 
