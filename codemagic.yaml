@@ -628,36 +628,24 @@ workflows:
           # ============================================================
           # Fix api_service.dart
           # Fix StorageService() -> StorageService.instance
-          # Fix connectivityResult.contains() - in newer connectivity_plus
-          # checkConnectivity() returns List<ConnectivityResult>, so we
-          # need to check if the list contains .none
+          # Fix connectivity check - connectivity_plus now returns
+          # List<ConnectivityResult> from checkConnectivity(), but the
+          # code types the variable as ConnectivityResult (single enum)
+          # and calls .contains() on it which fails.
+          # Fix: change type to List<ConnectivityResult> so .contains() works
           # ============================================================
           api_file = "lib/services/api_service.dart"
           if os.path.exists(api_file):
               with open(api_file, 'r') as f:
                   content = f.read()
               content = content.replace("StorageService()", "StorageService.instance")
-              # Fix connectivity check - handle both old and new API
-              # New connectivity_plus: checkConnectivity() returns List<ConnectivityResult>
-              # Old: returns ConnectivityResult (single enum)
-              # If the variable is typed as ConnectivityResult (enum),
-              # use == comparison. If it's a List, use .contains()
-              # Safest: use .any() which works for both
+              # Step 1: Change variable type from single enum to List
               content = content.replace(
-                  "connectivityResult.contains(ConnectivityResult.none)",
-                  "connectivityResult == ConnectivityResult.none || (connectivityResult is List && connectivityResult.contains(ConnectivityResult.none))"
+                  "ConnectivityResult connectivityResult",
+                  "List<ConnectivityResult> connectivityResult"
               )
-              # Also handle the case where the variable might need
-              # to be checked as a list result from checkConnectivity()
-              content = content.replace(
-                  "final ConnectivityResult connectivityResult",
-                  "final List<ConnectivityResult> connectivityResult"
-              )
-              # Fix the == check for list type
-              content = content.replace(
-                  "connectivityResult == ConnectivityResult.none || (connectivityResult is List && connectivityResult.contains(ConnectivityResult.none))",
-                  "connectivityResult.contains(ConnectivityResult.none)"
-              )
+              # Step 2: .contains() now works on List, no further change needed
+              # (the original .contains(ConnectivityResult.none) is correct for List)
               with open(api_file, 'w') as f:
                   f.write(content)
               print("Fixed api_service.dart (StorageService, ConnectivityResult)")
