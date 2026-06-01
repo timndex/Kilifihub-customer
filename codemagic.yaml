@@ -559,6 +559,7 @@ workflows:
           # ============================================================
           # Fix CardTheme -> CardThemeData in main.dart
           # Also add CartProvider and provider imports
+          # Fix const expression error with CupertinoPageTransitionsBuilder
           # ============================================================
           main_file = "lib/main.dart"
           if os.path.exists(main_file):
@@ -571,9 +572,16 @@ workflows:
               if "package:provider" not in content:
                   content = "import 'package:provider/provider.dart';\n" + content
                   print("Added provider import to main.dart")
+              # FIX NEW: const map with CupertinoPageTransitionsBuilder
+              # Remove const keyword from pageTransitionsTheme map literal
+              # because CupertinoPageTransitionsBuilder() is not const
+              content = content.replace(
+                  "const <TargetPlatform, PageTransitionsBuilder>{",
+                  "<TargetPlatform, PageTransitionsBuilder>{"
+              )
               with open(main_file, 'w') as f:
                   f.write(content)
-              print("Fixed main.dart")
+              print("Fixed main.dart (CardTheme, const map, imports)")
 
           # ============================================================
           # Fix push_notification_service.dart
@@ -590,15 +598,25 @@ workflows:
 
           # ============================================================
           # Fix api_service.dart
+          # Fix StorageService() -> StorageService.instance
+          # Fix connectivityResult.contains() -> connectivityResult ==
+          # (ConnectivityResult is now an enum, not a list)
           # ============================================================
           api_file = "lib/services/api_service.dart"
           if os.path.exists(api_file):
               with open(api_file, 'r') as f:
                   content = f.read()
               content = content.replace("StorageService()", "StorageService.instance")
+              # connectivity_plus changed: ConnectivityResult is now an enum
+              # Old: connectivityResult.contains(ConnectivityResult.none)
+              # New: connectivityResult == ConnectivityResult.none
+              content = content.replace(
+                  "connectivityResult.contains(ConnectivityResult.none)",
+                  "connectivityResult == ConnectivityResult.none"
+              )
               with open(api_file, 'w') as f:
                   f.write(content)
-              print("Fixed api_service.dart")
+              print("Fixed api_service.dart (StorageService, ConnectivityResult)")
 
           # ============================================================
           # Fix api_config.dart
@@ -614,6 +632,58 @@ workflows:
               with open(api_cfg, 'w') as f:
                   f.write(content)
               print("Fixed api_config.dart")
+
+          # ============================================================
+          # FIX NEW: home_screen.dart RefreshIndicator ambiguous import
+          # Error: RefreshIndicator imported from both
+          # flutter/material and pull_to_refresh_flutter3
+          # Fix: hide RefreshIndicator from the pull_to_refresh import
+          # ============================================================
+          home_file = "lib/screens/home_screen.dart"
+          if os.path.exists(home_file):
+              with open(home_file, 'r') as f:
+                  content = f.read()
+              # If pull_to_refresh is imported without hiding, add hide
+              if "pull_to_refresh_flutter3" in content and "hide RefreshIndicator" not in content:
+                  content = content.replace(
+                      "import 'package:pull_to_refresh_flutter3/pull_to_refresh_flutter3.dart';",
+                      "import 'package:pull_to_refresh_flutter3/pull_to_refresh_flutter3.dart' hide RefreshIndicator;"
+                  )
+                  # Also handle other possible import paths
+                  content = re.sub(
+                      r"import 'package:pull_to_refresh_flutter3/[^']*';(?!\s*hide)",
+                      lambda m: m.group(0).rstrip(";") + " hide RefreshIndicator;",
+                      content
+                  )
+                  with open(home_file, 'w') as f:
+                      f.write(content)
+                  print("Fixed RefreshIndicator ambiguous import in home_screen.dart")
+              else:
+                  print("home_screen.dart already fixed or no conflict")
+
+          # ============================================================
+          # FIX NEW: stores_screen.dart CategoryModel missing singular param
+          # Error: Required named parameter 'singular' must be provided
+          # Fix: add singular parameter to CategoryModel constructor call
+          # ============================================================
+          stores_file = "lib/screens/stores_screen.dart"
+          if os.path.exists(stores_file):
+              with open(stores_file, 'r') as f:
+                  content = f.read()
+              # Fix: CategoryModel(slug: args, label: args.toUpperCase())
+              # needs: singular parameter
+              if "CategoryModel(slug:" in content and "singular" not in content.split("CategoryModel")[1].split(")")[0]:
+                  # Replace the CategoryModel constructor call to add singular
+                  content = re.sub(
+                      r'CategoryModel\(slug:\s*(\w+),\s*label:\s*(\w+)\.toUpperCase\(\)\)',
+                      r'CategoryModel(slug: \1, label: \2.toUpperCase(), singular: \2)',
+                      content
+                  )
+                  with open(stores_file, 'w') as f:
+                      f.write(content)
+                  print("Fixed CategoryModel missing singular param in stores_screen.dart")
+              else:
+                  print("stores_screen.dart CategoryModel already fixed or no issue")
 
           print("=== All Dart fixes complete ===")
           PYEOF
