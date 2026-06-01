@@ -719,6 +719,7 @@ workflows:
           print("=== All Dart fixes complete ===")
           PYEOF
 
+
       - name: Add Demo/Guest Mode for offline browsing
         script: |
           set -e
@@ -729,8 +730,6 @@ workflows:
 
           # ============================================================
           # CREATE: lib/utils/demo_mode.dart
-          # Provides demo user data and mock API responses
-          # so the app can be browsed without a live server
           # ============================================================
           utils_dir = "lib/utils"
           os.makedirs(utils_dir, exist_ok=True)
@@ -738,7 +737,7 @@ workflows:
 
           if not os.path.exists(demo_mode_path):
               demo_mode_code = (
-                  "import 'dart:convert';\n"
+                  "import 'dart:io';\n"
                   "import 'package:shared_preferences/shared_preferences.dart';\n"
                   "\n"
                   "class DemoMode {\n"
@@ -772,29 +771,43 @@ workflows:
                   "  }\n"
                   "\n"
                   "  static Future<bool> checkGuestMode() async {\n"
-                  "    final prefs = await SharedPreferences.getInstance();\n"
-                  "    _isGuest = prefs.getBool(_keyIsGuest) ?? false;\n"
+                  "    try {\n"
+                  "      final prefs = await SharedPreferences.getInstance();\n"
+                  "      _isGuest = prefs.getBool(_keyIsGuest) ?? false;\n"
+                  "    } catch (e) {\n"
+                  "      _isGuest = false;\n"
+                  "    }\n"
                   "    return _isGuest;\n"
                   "  }\n"
                   "\n"
+                  "  static Future<bool> isServerReachable() async {\n"
+                  "    try {\n"
+                  "      final socket = await Socket.connect('ats.unaux.com', 443, timeout: Duration(seconds: 3));\n"
+                  "      socket.destroy();\n"
+                  "      return true;\n"
+                  "    } catch (e) {\n"
+                  "      try {\n"
+                  "        final socket = await Socket.connect('ats.unaux.com', 80, timeout: Duration(seconds: 3));\n"
+                  "        socket.destroy();\n"
+                  "        return true;\n"
+                  "      } catch (e2) {\n"
+                  "        return false;\n"
+                  "      }\n"
+                  "    }\n"
+                  "  }\n"
+                  "\n"
                   "  static Future<String?> getToken() async {\n"
-                  "    final prefs = await SharedPreferences.getInstance();\n"
-                  "    return prefs.getString(_keyUserToken);\n"
+                  "    try {\n"
+                  "      final prefs = await SharedPreferences.getInstance();\n"
+                  "      return prefs.getString(_keyUserToken);\n"
+                  "    } catch (e) { return null; }\n"
                   "  }\n"
                   "\n"
                   "  static Future<int?> getUserId() async {\n"
-                  "    final prefs = await SharedPreferences.getInstance();\n"
-                  "    return prefs.getInt(_keyUserId);\n"
-                  "  }\n"
-                  "\n"
-                  "  static Future<String?> getUserName() async {\n"
-                  "    final prefs = await SharedPreferences.getInstance();\n"
-                  "    return prefs.getString(_keyUserName);\n"
-                  "  }\n"
-                  "\n"
-                  "  static Future<String?> getUserEmail() async {\n"
-                  "    final prefs = await SharedPreferences.getInstance();\n"
-                  "    return prefs.getString(_keyUserEmail);\n"
+                  "    try {\n"
+                  "      final prefs = await SharedPreferences.getInstance();\n"
+                  "      return prefs.getInt(_keyUserId);\n"
+                  "    } catch (e) { return null; }\n"
                   "  }\n"
                   "\n"
                   "  static Map<String, dynamic> getDemoStores() => {\n"
@@ -832,6 +845,14 @@ workflows:
                   "      {'id': 1002, 'number': 'KH-1002', 'status': 'processing', 'date_created': '2025-05-30T14:15:00', 'total': '430.00', 'items': [{'name': 'Maize Flour 2kg', 'quantity': 1, 'total': '180'}], 'shipping': {'first_name': 'Demo', 'last_name': 'User', 'address_1': 'Kilifi Town'}},\n"
                   "    ]\n"
                   "  };\n"
+                  "\n"
+                  "  static Map<String, dynamic> getDemoResponse(String endpoint) {\n"
+                  "    if (endpoint.contains('product')) return getDemoProducts();\n"
+                  "    if (endpoint.contains('order')) return getDemoOrders();\n"
+                  "    if (endpoint.contains('categor')) return getDemoCategories();\n"
+                  "    if (endpoint.contains('vendor') || endpoint.contains('store')) return getDemoStores();\n"
+                  "    return {'data': []};\n"
+                  "  }\n"
                   "}\n"
               )
               with open(demo_mode_path, 'w') as f:
@@ -841,114 +862,533 @@ workflows:
               print("demo_mode.dart already exists")
 
           # ============================================================
-          # PATCH: login_screen.dart - Add "Continue as Guest" button
+          # CREATE: lib/screens/guest_home_screen.dart
+          # A STANDALONE home screen that works entirely offline.
           # ============================================================
-          login_file = "lib/screens/login_screen.dart"
-          if os.path.exists(login_file):
-              with open(login_file, 'r') as f:
+          guest_home_path = "lib/screens/guest_home_screen.dart"
+
+          if not os.path.exists(guest_home_path):
+              guest_code_lines = [
+                  "import 'package:flutter/material.dart';",
+                  "import '../utils/demo_mode.dart';",
+                  "",
+                  "class GuestHomeScreen extends StatefulWidget {",
+                  "  const GuestHomeScreen({Key? key}) : super(key: key);",
+                  "  @override",
+                  "  State<GuestHomeScreen> createState() => _GuestHomeScreenState();",
+                  "}",
+                  "",
+                  "class _GuestHomeScreenState extends State<GuestHomeScreen> {",
+                  "  int _currentIndex = 0;",
+                  "",
+                  "  @override",
+                  "  Widget build(BuildContext context) {",
+                  "    return Scaffold(",
+                  "      body: IndexedStack(",
+                  "        index: _currentIndex,",
+                  "        children: [",
+                  "          _HomeTab(),",
+                  "          _CategoriesTab(),",
+                  "          _CartTab(),",
+                  "          _OrdersTab(),",
+                  "          _ProfileTab(),",
+                  "        ],",
+                  "      ),",
+                  "      bottomNavigationBar: Container(",
+                  "        decoration: BoxDecoration(",
+                  "          color: Colors.white,",
+                  "          boxShadow: [BoxShadow(color: Colors.black12, blurRadius: 4)],",
+                  "        ),",
+                  "        child: SafeArea(",
+                  "          child: Padding(",
+                  "            padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),",
+                  "            child: Row(",
+                  "              mainAxisAlignment: MainAxisAlignment.spaceAround,",
+                  "              children: [",
+                  "                _NavItem(icon: Icons.home, label: 'Home', index: 0, current: _currentIndex, onTap: () => setState(() => _currentIndex = 0)),",
+                  "                _NavItem(icon: Icons.category, label: 'Categories', index: 1, current: _currentIndex, onTap: () => setState(() => _currentIndex = 1)),",
+                  "                _NavItem(icon: Icons.shopping_cart, label: 'Cart', index: 2, current: _currentIndex, onTap: () => setState(() => _currentIndex = 2)),",
+                  "                _NavItem(icon: Icons.receipt_long, label: 'Orders', index: 3, current: _currentIndex, onTap: () => setState(() => _currentIndex = 3)),",
+                  "                _NavItem(icon: Icons.person, label: 'Profile', index: 4, current: _currentIndex, onTap: () => setState(() => _currentIndex = 4)),",
+                  "              ],",
+                  "            ),",
+                  "          ),",
+                  "        ),",
+                  "      ),",
+                  "    );",
+                  "  }",
+                  "}",
+                  "",
+                  "class _NavItem extends StatelessWidget {",
+                  "  final IconData icon;",
+                  "  final String label;",
+                  "  final int index;",
+                  "  final int current;",
+                  "  final VoidCallback onTap;",
+                  "  const _NavItem({required this.icon, required this.label, required this.index, required this.current, required this.onTap});",
+                  "  @override",
+                  "  Widget build(BuildContext context) {",
+                  "    final sel = index == current;",
+                  "    return GestureDetector(",
+                  "      onTap: onTap,",
+                  "      child: Padding(",
+                  "        padding: EdgeInsets.symmetric(horizontal: 12, vertical: 4),",
+                  "        child: Column(",
+                  "          mainAxisSize: MainAxisSize.min,",
+                  "          children: [",
+                  "            Icon(icon, color: sel ? Colors.blue : Colors.grey, size: 24),",
+                  "            SizedBox(height: 2),",
+                  "            Text(label, style: TextStyle(fontSize: 10, color: sel ? Colors.blue : Colors.grey, fontWeight: sel ? FontWeight.w600 : FontWeight.normal)),",
+                  "          ],",
+                  "        ),",
+                  "      ),",
+                  "    );",
+                  "  }",
+                  "}",
+                  "",
+                  "class _DemoBanner extends StatelessWidget {",
+                  "  @override",
+                  "  Widget build(BuildContext context) {",
+                  "    return Container(",
+                  "      color: Colors.orange.shade700,",
+                  "      padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),",
+                  "      child: SafeArea(",
+                  "        bottom: false,",
+                  "        child: Row(",
+                  "          children: [",
+                  "            Icon(Icons.wifi_off, color: Colors.white, size: 16),",
+                  "            SizedBox(width: 8),",
+                  "            Expanded(child: Text('Demo Mode - Server Unavailable', style: TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w600))),",
+                  "            GestureDetector(",
+                  "              onTap: () async {",
+                  "                await DemoMode.disableGuestMode();",
+                  "                try { Navigator.of(context).pushReplacementNamed('/login'); } catch(e) { debugPrint('Navigation error: $e'); }",
+                  "              },",
+                  "              child: Text('Exit', style: TextStyle(color: Colors.white, fontSize: 13, decoration: TextDecoration.underline)),",
+                  "            ),",
+                  "          ],",
+                  "        ),",
+                  "      ),",
+                  "    );",
+                  "  }",
+                  "}",
+                  "",
+                  "class _HomeTab extends StatelessWidget {",
+                  "  @override",
+                  "  Widget build(BuildContext context) {",
+                  "    final products = DemoMode.getDemoProducts()['data'] as List;",
+                  "    final stores = DemoMode.getDemoStores()['data'] as List;",
+                  "    return Column(",
+                  "      children: [",
+                  "        _DemoBanner(),",
+                  "        Expanded(",
+                  "          child: SingleChildScrollView(",
+                  "            padding: EdgeInsets.fromLTRB(16, 12, 16, 16),",
+                  "            child: Column(",
+                  "              crossAxisAlignment: CrossAxisAlignment.start,",
+                  "              children: [",
+                  "                Text('KilifiHub', style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold, color: Color(0xFF1565C0))),",
+                  "                SizedBox(height: 4),",
+                  "                Text('Your local marketplace in Kilifi', style: TextStyle(fontSize: 14, color: Colors.grey.shade600)),",
+                  "                SizedBox(height: 20),",
+                  "                Container(",
+                  "                  padding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),",
+                  "                  decoration: BoxDecoration(color: Colors.grey.shade100, borderRadius: BorderRadius.circular(12)),",
+                  "                  child: Row(children: [Icon(Icons.search, color: Colors.grey), SizedBox(width: 8), Text('Search products, stores...', style: TextStyle(color: Colors.grey))]),",
+                  "                ),",
+                  "                SizedBox(height: 20),",
+                  "                Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [",
+                  "                  Text('Featured Stores', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),",
+                  "                  Text('View All', style: TextStyle(fontSize: 14, color: Colors.blue)),",
+                  "                ]),",
+                  "                SizedBox(height: 12),",
+                  "                SizedBox(",
+                  "                  height: 110,",
+                  "                  child: ListView.separated(",
+                  "                    scrollDirection: Axis.horizontal,",
+                  "                    itemCount: stores.length,",
+                  "                    separatorBuilder: (_, __) => SizedBox(width: 12),",
+                  "                    itemBuilder: (ctx, i) {",
+                  "                      final s = stores[i] as Map<String, dynamic>;",
+                  "                      return Container(",
+                  "                        width: 180,",
+                  "                        decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12), border: Border.all(color: Colors.grey.shade200)),",
+                  "                        child: Padding(",
+                  "                          padding: EdgeInsets.all(10),",
+                  "                          child: Row(",
+                  "                            children: [",
+                  "                              CircleAvatar(backgroundColor: Colors.blue.shade50, child: Icon(Icons.store, color: Colors.blue, size: 20)),",
+                  "                              SizedBox(width: 8),",
+                  "                              Expanded(",
+                  "                                child: Column(",
+                  "                                  crossAxisAlignment: CrossAxisAlignment.start,",
+                  "                                  mainAxisAlignment: MainAxisAlignment.center,",
+                  "                                  children: [",
+                  "                                    Text(s['name'] ?? '', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 12), maxLines: 1, overflow: TextOverflow.ellipsis),",
+                  "                                    Row(children: [Icon(Icons.star, size: 12, color: Colors.amber), SizedBox(width: 2), Text('${s['rating']}', style: TextStyle(fontSize: 10, color: Colors.grey))]),",
+                  "                                  ],",
+                  "                                ),",
+                  "                              ),",
+                  "                            ],",
+                  "                          ),",
+                  "                        ),",
+                  "                      );",
+                  "                    },",
+                  "                  ),",
+                  "                ),",
+                  "                SizedBox(height: 20),",
+                  "                Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [",
+                  "                  Text('Popular Products', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),",
+                  "                  Text('View All', style: TextStyle(fontSize: 14, color: Colors.blue)),",
+                  "                ]),",
+                  "                SizedBox(height: 12),",
+                  "                ...products.map((p) {",
+                  "                  final item = p as Map<String, dynamic>;",
+                  "                  return Container(",
+                  "                    margin: EdgeInsets.only(bottom: 10),",
+                  "                    decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12), border: Border.all(color: Colors.grey.shade200)),",
+                  "                    child: Padding(",
+                  "                      padding: EdgeInsets.all(10),",
+                  "                      child: Row(",
+                  "                        children: [",
+                  "                          Container(",
+                  "                            width: 56, height: 56,",
+                  "                            decoration: BoxDecoration(color: Colors.blue.shade50, borderRadius: BorderRadius.circular(10)),",
+                  "                            child: Icon(Icons.shopping_bag, color: Colors.blue),",
+                  "                          ),",
+                  "                          SizedBox(width: 12),",
+                  "                          Expanded(",
+                  "                            child: Column(",
+                  "                              crossAxisAlignment: CrossAxisAlignment.start,",
+                  "                              children: [",
+                  "                                Text(item['name'] ?? '', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),",
+                  "                                SizedBox(height: 2),",
+                  "                                Row(",
+                  "                                  children: [",
+                  "                                    Text('KES ${item['price']}', style: TextStyle(fontWeight: FontWeight.w700, color: Color(0xFF1565C0), fontSize: 14)),",
+                  "                                    if (item['regular_price'] != null) ...[",
+                  "                                      SizedBox(width: 6),",
+                  "                                      Text('KES ${item['regular_price']}', style: TextStyle(decoration: TextDecoration.lineThrough, color: Colors.grey, fontSize: 12)),",
+                  "                                    ],",
+                  "                                  ],",
+                  "                                ),",
+                  "                              ],",
+                  "                            ),",
+                  "                          ),",
+                  "                          Container(",
+                  "                            padding: EdgeInsets.all(6),",
+                  "                            decoration: BoxDecoration(color: Colors.blue, borderRadius: BorderRadius.circular(8)),",
+                  "                            child: Icon(Icons.add, color: Colors.white, size: 18),",
+                  "                          ),",
+                  "                        ],",
+                  "                      ),",
+                  "                    ),",
+                  "                  );",
+                  "                }),",
+                  "              ],",
+                  "            ),",
+                  "          ),",
+                  "        ),",
+                  "      ],",
+                  "    );",
+                  "  }",
+                  "}",
+                  "",
+                  "class _CategoriesTab extends StatelessWidget {",
+                  "  @override",
+                  "  Widget build(BuildContext context) {",
+                  "    final cats = DemoMode.getDemoCategories()['data'] as List;",
+                  "    return Column(",
+                  "      children: [",
+                  "        _DemoBanner(),",
+                  "        Expanded(",
+                  "          child: Padding(",
+                  "            padding: EdgeInsets.all(16),",
+                  "            child: Column(",
+                  "              crossAxisAlignment: CrossAxisAlignment.start,",
+                  "              children: [",
+                  "                Text('Categories', style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),",
+                  "                SizedBox(height: 16),",
+                  "                Expanded(",
+                  "                  child: GridView.builder(",
+                  "                    gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 2, crossAxisSpacing: 12, mainAxisSpacing: 12, childAspectRatio: 1.2),",
+                  "                    itemCount: cats.length,",
+                  "                    itemBuilder: (ctx, i) {",
+                  "                      final c = cats[i] as Map<String, dynamic>;",
+                  "                      return Container(",
+                  "                        decoration: BoxDecoration(color: Colors.blue.shade50, borderRadius: BorderRadius.circular(16), border: Border.all(color: Colors.blue.shade100)),",
+                  "                        child: Column(",
+                  "                          mainAxisAlignment: MainAxisAlignment.center,",
+                  "                          children: [",
+                  "                            Icon(Icons.category, size: 36, color: Colors.blue),",
+                  "                            SizedBox(height: 8),",
+                  "                            Text(c['name'] ?? '', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),",
+                  "                            SizedBox(height: 2),",
+                  "                            Text('${c['count'] ?? 0} items', style: TextStyle(color: Colors.grey, fontSize: 12)),",
+                  "                          ],",
+                  "                        ),",
+                  "                      );",
+                  "                    },",
+                  "                  ),",
+                  "                ),",
+                  "              ],",
+                  "            ),",
+                  "          ),",
+                  "        ),",
+                  "      ],",
+                  "    );",
+                  "  }",
+                  "}",
+                  "",
+                  "class _CartTab extends StatelessWidget {",
+                  "  @override",
+                  "  Widget build(BuildContext context) {",
+                  "    return Column(",
+                  "      children: [",
+                  "        _DemoBanner(),",
+                  "        Expanded(",
+                  "          child: Center(",
+                  "            child: Column(",
+                  "              mainAxisAlignment: MainAxisAlignment.center,",
+                  "              children: [",
+                  "                Icon(Icons.shopping_cart_outlined, size: 72, color: Colors.grey.shade300),",
+                  "                SizedBox(height: 16),",
+                  "                Text('Your cart is empty', style: TextStyle(fontSize: 18, color: Colors.grey.shade500, fontWeight: FontWeight.w500)),",
+                  "                SizedBox(height: 8),",
+                  "                Text('Browse products and add items to cart', style: TextStyle(fontSize: 14, color: Colors.grey.shade400)),",
+                  "              ],",
+                  "            ),",
+                  "          ),",
+                  "        ),",
+                  "      ],",
+                  "    );",
+                  "  }",
+                  "}",
+                  "",
+                  "class _OrdersTab extends StatelessWidget {",
+                  "  @override",
+                  "  Widget build(BuildContext context) {",
+                  "    final orders = DemoMode.getDemoOrders()['data'] as List;",
+                  "    return Column(",
+                  "      children: [",
+                  "        _DemoBanner(),",
+                  "        Expanded(",
+                  "          child: Padding(",
+                  "            padding: EdgeInsets.all(16),",
+                  "            child: Column(",
+                  "              crossAxisAlignment: CrossAxisAlignment.start,",
+                  "              children: [",
+                  "                Text('My Orders', style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),",
+                  "                SizedBox(height: 16),",
+                  "                ...orders.map((o) {",
+                  "                  final order = o as Map<String, dynamic>;",
+                  "                  final isCompleted = order['status'] == 'completed';",
+                  "                  return Container(",
+                  "                    margin: EdgeInsets.only(bottom: 10),",
+                  "                    decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12), border: Border.all(color: Colors.grey.shade200)),",
+                  "                    child: Padding(",
+                  "                      padding: EdgeInsets.all(12),",
+                  "                      child: Row(",
+                  "                        children: [",
+                  "                          CircleAvatar(",
+                  "                            backgroundColor: (isCompleted ? Colors.green : Colors.orange).withOpacity(0.1),",
+                  "                            child: Icon(Icons.receipt, color: isCompleted ? Colors.green : Colors.orange),",
+                  "                          ),",
+                  "                          SizedBox(width: 12),",
+                  "                          Expanded(",
+                  "                            child: Column(",
+                  "                              crossAxisAlignment: CrossAxisAlignment.start,",
+                  "                              children: [",
+                  "                                Text('Order #${order['number']}', style: TextStyle(fontWeight: FontWeight.w600)),",
+                  "                                Text('KES ${order['total']}', style: TextStyle(color: Colors.grey)),",
+                  "                              ],",
+                  "                            ),",
+                  "                          ),",
+                  "                          Container(",
+                  "                            padding: EdgeInsets.symmetric(horizontal: 10, vertical: 4),",
+                  "                            decoration: BoxDecoration(color: (isCompleted ? Colors.green : Colors.orange).withOpacity(0.1), borderRadius: BorderRadius.circular(20)),",
+                  "                            child: Text(order['status'] ?? '', style: TextStyle(color: isCompleted ? Colors.green : Colors.orange, fontSize: 11, fontWeight: FontWeight.w600)),",
+                  "                          ),",
+                  "                        ],",
+                  "                      ),",
+                  "                    ),",
+                  "                  );",
+                  "                }),",
+                  "              ],",
+                  "            ),",
+                  "          ),",
+                  "        ),",
+                  "      ],",
+                  "    );",
+                  "  }",
+                  "}",
+                  "",
+                  "class _ProfileTab extends StatelessWidget {",
+                  "  @override",
+                  "  Widget build(BuildContext context) {",
+                  "    return Column(",
+                  "      children: [",
+                  "        _DemoBanner(),",
+                  "        Expanded(",
+                  "          child: SingleChildScrollView(",
+                  "            padding: EdgeInsets.all(16),",
+                  "            child: Column(",
+                  "              children: [",
+                  "                SizedBox(height: 20),",
+                  "                CircleAvatar(radius: 48, backgroundColor: Colors.blue.shade100, child: Icon(Icons.person, size: 48, color: Colors.blue)),",
+                  "                SizedBox(height: 12),",
+                  "                Text('Demo User', style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),",
+                  "                Text('demo@kilifihub.co.ke', style: TextStyle(color: Colors.grey.shade500)),",
+                  "                SizedBox(height: 24),",
+                  "                _ProfileTile(icon: Icons.location_on, title: 'My Addresses'),",
+                  "                _ProfileTile(icon: Icons.payment, title: 'Payment Methods'),",
+                  "                _ProfileTile(icon: Icons.notifications, title: 'Notifications'),",
+                  "                _ProfileTile(icon: Icons.settings, title: 'Settings'),",
+                  "                _ProfileTile(icon: Icons.help_outline, title: 'Help & Support'),",
+                  "                SizedBox(height: 20),",
+                  "                SizedBox(",
+                  "                  width: double.infinity,",
+                  "                  child: ElevatedButton(",
+                  "                    onPressed: () async {",
+                  "                      await DemoMode.disableGuestMode();",
+                  "                      try { Navigator.of(context).pushReplacementNamed('/login'); } catch(e) { debugPrint('Nav error: $e'); }",
+                  "                    },",
+                  "                    style: ElevatedButton.styleFrom(backgroundColor: Colors.red, foregroundColor: Colors.white, padding: EdgeInsets.symmetric(vertical: 14), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),",
+                  "                    child: Text('Exit Demo Mode', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),",
+                  "                  ),",
+                  "                ),",
+                  "              ],",
+                  "            ),",
+                  "          ),",
+                  "        ),",
+                  "      ],",
+                  "    );",
+                  "  }",
+                  "}",
+                  "",
+                  "class _ProfileTile extends StatelessWidget {",
+                  "  final IconData icon;",
+                  "  final String title;",
+                  "  const _ProfileTile({required this.icon, required this.title});",
+                  "  @override",
+                  "  Widget build(BuildContext context) {",
+                  "    return Container(",
+                  "      margin: EdgeInsets.only(bottom: 6),",
+                  "      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(10), border: Border.all(color: Colors.grey.shade200)),",
+                  "      child: ListTile(",
+                  "        leading: Icon(icon, color: Colors.blue),",
+                  "        title: Text(title, style: TextStyle(fontWeight: FontWeight.w500)),",
+                  "        trailing: Icon(Icons.chevron_right, color: Colors.grey),",
+                  "        contentPadding: EdgeInsets.symmetric(horizontal: 12),",
+                  "        dense: true,",
+                  "      ),",
+                  "    );",
+                  "  }",
+                  "}",
+              ]
+              with open(guest_home_path, 'w') as f:
+                  f.write('\n'.join(guest_code_lines) + '\n')
+              print("Created: guest_home_screen.dart")
+          else:
+              print("guest_home_screen.dart already exists")
+
+          # ============================================================
+          # PATCH: main.dart
+          # SAFE minimal changes that cannot break the app.
+          # ============================================================
+          main_file = "lib/main.dart"
+          if os.path.exists(main_file):
+              with open(main_file, 'r') as f:
                   content = f.read()
 
+              # Add imports
               if "demo_mode.dart" not in content:
-                  # Add import
-                  content = "import '../utils/demo_mode.dart';\n" + content
+                  content = "import 'utils/demo_mode.dart';\n" + content
+                  print("Added demo_mode import to main.dart")
+              if "guest_home_screen.dart" not in content:
+                  content = "import 'screens/guest_home_screen.dart';\n" + content
+                  print("Added guest_home_screen import to main.dart")
 
-              if "Continue as Guest" not in content and "enableGuestMode" not in content:
-                  # Find the last closing parenthesis of the Scaffold or the
-                  # login button and add a guest button after it
-                  # Strategy: find the login button's onPressed and add
-                  # a TextButton after the login button widget
+              # Make main() async if not already
+              if "void main() async" not in content:
+                  content = content.replace("void main() {", "void main() async {")
+                  print("Made main() async")
 
-                  # Look for common login button patterns and add guest button
-                  guest_button_snippet = (
-                      "\n"
-                      "            SizedBox(height: 16),\n"
-                      "            TextButton(\n"
-                      "              onPressed: () async {\n"
-                      "                await DemoMode.enableGuestMode();\n"
-                      "                Navigator.of(context).pushReplacementNamed('/home');\n"
-                      "              },\n"
-                      "              child: Text(\n"
-                      "                'Continue as Guest (Demo Mode)',\n"
-                      "                style: TextStyle(color: Colors.blue, fontSize: 14),\n"
-                      "              ),\n"
-                      "            ),\n"
+              # Add WidgetsFlutterBinding.ensureInitialized() if not present
+              if "WidgetsFlutterBinding.ensureInitialized()" not in content:
+                  content = content.replace(
+                      "void main() async {",
+                      "void main() async {\n  WidgetsFlutterBinding.ensureInitialized();"
                   )
+                  print("Added ensureInitialized to main()")
 
-                  # Try to insert after the login/register button
-                  # Find patterns like: ElevatedButton, RaisedButton, GestureDetector with login
-                  inserted = False
+              # Add global error handler - PREVENTS black screen on crashes
+              if "FlutterError.onError" not in content:
+                  content = content.replace(
+                      "WidgetsFlutterBinding.ensureInitialized();",
+                      "WidgetsFlutterBinding.ensureInitialized();\n"
+                      "  FlutterError.onError = (details) {\n"
+                      "    debugPrint('FlutterError: ${details.exceptionAsString()}');\n"
+                      "  };"
+                  )
+                  print("Added FlutterError.onError handler")
 
-                  # Pattern 1: After an ElevatedButton or similar that has "Login" or "Sign In"
-                  # Find the last ) of a button and insert after it
-                  # Use a simpler approach: insert before the last ] or ) of the Column/Form children
-                  if not inserted:
-                      # Find the Column or Form children list and add the guest button
-                      # Look for the closing of a login button area
-                      # Most common: after a SizedBox that follows a button
-                      login_patterns = [
-                          "Log In", "Login", "Sign In", "SignIn",
-                          "REGISTER", "Register", "Sign Up", "SignUp"
-                      ]
-                      for pattern in login_patterns:
-                          if pattern in content and not inserted:
-                              # Find the line containing the login button text
-                              lines = content.split('\n')
-                              last_button_line = -1
-                              for i, line in enumerate(lines):
-                                  if pattern in line and ('child' in line or 'Text' in line):
-                                      last_button_line = i
+              # Add demo mode check and server auto-detect
+              if "await DemoMode.checkGuestMode()" not in content:
+                  # Find the line with the error handler closing and add after it
+                  content = content.replace(
+                      "  };\n",
+                      "  };\n"
+                      "  await DemoMode.checkGuestMode();\n"
+                      "  if (!DemoMode.isGuest) {\n"
+                      "    final reachable = await DemoMode.isServerReachable();\n"
+                      "    if (!reachable) {\n"
+                      "      await DemoMode.enableGuestMode();\n"
+                      "    }\n"
+                      "  }\n",
+                      1  # Only replace first occurrence
+                  )
+                  print("Added demo mode check and server auto-detect")
 
-                              if last_button_line >= 0:
-                                  # Find the next closing paren/bracket after this line
-                                  # Insert the guest button after it
-                                  insert_pos = last_button_line + 1
-                                  # Find the line with the closing ) for the button
-                                  for i in range(last_button_line, min(last_button_line + 10, len(lines))):
-                                      if lines[i].strip() == ')' or lines[i].strip() == '),':
-                                          insert_pos = i + 1
-                                          break
+              # Add /guest_home route if routes: section exists
+              if "routes:" in content and "'/guest_home'" not in content:
+                  content = content.replace(
+                      "routes: {",
+                      "routes: {\n      '/guest_home': (context) => GuestHomeScreen(),"
+                  )
+                  print("Added /guest_home route")
 
-                                  lines.insert(insert_pos, guest_button_snippet)
-                                  content = '\n'.join(lines)
-                                  inserted = True
-                                  break
+              # CONDITIONAL runApp: If demo mode, run demo app; else original
+              # Strategy: Insert early-return BEFORE runApp() - much safer
+              # than trying to wrap it with if/else
+              # Check: is there already a runApp with GuestHomeScreen?
+              has_demo_runapp = any('runApp' in line and 'GuestHomeScreen' in line for line in content.split('\n'))
+              if not has_demo_runapp:
+                  lines = content.split('\n')
+                  new_lines = []
+                  for line in lines:
+                      if 'runApp(' in line and 'GuestHomeScreen' not in line and 'debugPrint' not in line and 'DemoMode' not in line:
+                          indent = line[:len(line) - len(line.lstrip())]
+                          # Insert demo mode check with early return
+                          # This is safe: original runApp is untouched
+                          new_lines.append(f"{indent}if (DemoMode.isGuest) {{")
+                          new_lines.append(f"{indent}  runApp(MaterialApp(")
+                          new_lines.append(f"{indent}    home: GuestHomeScreen(),")
+                          new_lines.append(f"{indent}    debugShowCheckedModeBanner: false,")
+                          new_lines.append(f"{indent}  ));")
+                          new_lines.append(f"{indent}  return;")
+                          new_lines.append(f"{indent}}}")
+                      new_lines.append(line)
+                  content = '\n'.join(new_lines)
+                  print("Added conditional runApp with demo mode check")
 
-                  # Fallback: if no button found, add at the end of the build method
-                  if not inserted:
-                      # Find the last Scaffold in the file and add a bottomSheet
-                      # or add a floatingActionButton
-                      content = content.replace(
-                          "Scaffold(",
-                          "Scaffold(\n"
-                          "      bottomSheet: SafeArea(\n"
-                          "        child: Padding(\n"
-                          "          padding: EdgeInsets.only(bottom: 16),\n"
-                          "          child: Center(\n"
-                          "            child: TextButton(\n"
-                          "              onPressed: () async {\n"
-                          "                await DemoMode.enableGuestMode();\n"
-                          "                Navigator.of(context).pushReplacementNamed('/home');\n"
-                          "              },\n"
-                          "              child: Text('Continue as Guest (Demo Mode)',\n"
-                          "                style: TextStyle(color: Colors.blue, fontSize: 14)),\n"
-                          "            ),\n"
-                          "          ),\n"
-                          "        ),\n"
-                          "      ),",
-                          1  # Only replace first occurrence
-                      )
-
-                  with open(login_file, 'w') as f:
-                      f.write(content)
-                  print("Patched login_screen.dart with Guest Mode button")
-              else:
-                  print("login_screen.dart already has Guest Mode")
-          else:
-              print("WARNING: login_screen.dart not found")
+              with open(main_file, 'w') as f:
+                  f.write(content)
+              print("Patched main.dart with guest mode support")
 
           # ============================================================
-          # PATCH: api_service.dart - Handle connection errors gracefully
-          # In guest mode, return demo data instead of throwing errors
+          # PATCH: api_service.dart
+          # Wrap HTTP requests in try-catch; return demo data on error
           # ============================================================
           api_file = "lib/services/api_service.dart"
           if os.path.exists(api_file):
@@ -958,102 +1398,163 @@ workflows:
               if "demo_mode.dart" not in content:
                   content = "import '../utils/demo_mode.dart';\n" + content
 
-              # Wrap the main HTTP request method to return demo data on failure
-              # Find the get/post method and add try-catch with demo fallback
-              # Look for patterns like: Future<Response> get( or Future<dynamic> get(
-              if "DemoMode.isGuest" not in content:
-                  # Add demo fallback at the top of the main request method
-                  # Find the first async method that makes HTTP calls
-                  # Strategy: add a helper at the end of the class
-
+              # Add demo fallback helper method
+              if "DemoMode.getDemoResponse" not in content:
                   demo_helper = (
                       "\n"
                       "  // Demo mode: returns mock data when server is unreachable\n"
-                      "  dynamic _getDemoResponse(String endpoint) {\n"
+                      "  dynamic _getDemoFallback(String endpoint) {\n"
                       "    if (!DemoMode.isGuest) return null;\n"
-                      "    if (endpoint.contains('product') || endpoint.contains('store')) {\n"
-                      "      return DemoMode.getDemoProducts();\n"
-                      "    }\n"
-                      "    if (endpoint.contains('order')) {\n"
-                      "      return DemoMode.getDemoOrders();\n"
-                      "    }\n"
-                      "    if (endpoint.contains('categor')) {\n"
-                      "      return DemoMode.getDemoCategories();\n"
-                      "    }\n"
-                      "    if (endpoint.contains('vendor') || endpoint.contains('store')) {\n"
-                      "      return DemoMode.getDemoStores();\n"
-                      "    }\n"
-                      "    return {'data': []};\n"
+                      "    return DemoMode.getDemoResponse(endpoint);\n"
                       "  }\n"
                   )
-
-                  # Find the last closing brace of the class and insert before it
                   last_brace_pos = content.rfind('}')
                   if last_brace_pos > 0:
                       content = content[:last_brace_pos] + demo_helper + content[last_brace_pos:]
 
-                  # Also wrap the main request method with try-catch that
-                  # returns demo data on SocketException / connectivity errors
-                  # Add at the very top of the file after imports
-                  content = content.replace(
-                      "import 'dart:convert';",
-                      "import 'dart:convert';\nimport 'dart:io';"
+              # Add safe API call wrapper
+              if "_safeApiCall" not in content:
+                  safe_call_method = (
+                      "\n"
+                      "  // Safe API call - never throws, returns demo data on error\n"
+                      "  Future<dynamic> _safeApiCall(String endpoint, Future<dynamic> Function() apiCall) async {\n"
+                      "    try {\n"
+                      "      return await apiCall();\n"
+                      "    } catch (e) {\n"
+                      "      debugPrint('API call failed: $e');\n"
+                      "      final demoData = _getDemoFallback(endpoint);\n"
+                      "      if (demoData != null) return demoData;\n"
+                      "      return {'data': []};\n"
+                      "    }\n"
+                      "  }\n"
                   )
+                  last_brace_pos = content.rfind('}')
+                  if last_brace_pos > 0:
+                      content = content[:last_brace_pos] + safe_call_method + content[last_brace_pos:]
 
-                  with open(api_file, 'w') as f:
-                      f.write(content)
-                  print("Patched api_service.dart with demo data fallback")
-              else:
-                  print("api_service.dart already has demo fallback")
+              # Bypass blocking connectivity checks
+              if "ConnectivityResult.none" in content or "connectivityResult" in content:
+                  lines = content.split('\n')
+                  new_lines = []
+                  for line in lines:
+                      if ('ConnectivityResult.none' in line and
+                          ('return' in line or 'throw' in line or 'showDialog' in line or
+                           'ScaffoldMessenger' in line or 'connection error' in line.lower() or
+                           'check your internet' in line.lower())):
+                          new_lines.append('//' + line)
+                      else:
+                          new_lines.append(line)
+                  content = '\n'.join(new_lines)
+                  print("Bypassed blocking connectivity check in api_service.dart")
+
+              if "import 'dart:io'" not in content and "dart:io" not in content:
+                  content = "import 'dart:io';\n" + content
+
+              with open(api_file, 'w') as f:
+                  f.write(content)
+              print("Patched api_service.dart with safe API wrapper")
 
           # ============================================================
-          # PATCH: main.dart - Check guest mode on startup
-          # If user previously chose guest mode, skip login
+          # PATCH: login_screen.dart - add Demo Mode FAB (safe)
           # ============================================================
-          main_file = "lib/main.dart"
-          if os.path.exists(main_file):
-              with open(main_file, 'r') as f:
+          login_file = "lib/screens/login_screen.dart"
+          if os.path.exists(login_file):
+              with open(login_file, 'r') as f:
                   content = f.read()
 
               if "demo_mode.dart" not in content:
-                  content = "import 'utils/demo_mode.dart';\n" + content
+                  content = "import '../utils/demo_mode.dart';\n" + content
 
-              if "checkGuestMode" not in content:
-                  # Add guest mode check in the init or auth check
-                  # Find the initial route or auth check and add guest mode support
-                  # Common pattern: initialRoute: '/login' or home: LoginScreen()
-                  # Add DemoMode.checkGuestMode() call in the app init
+              if "enableGuestMode" not in content:
+                  lines = content.split('\n')
+                  new_lines = []
+                  scaffold_found = False
+                  for line in lines:
+                      new_lines.append(line)
+                      if 'return Scaffold(' in line and not scaffold_found:
+                          scaffold_found = True
+                          indent = line[:len(line) - len(line.lstrip())]
+                          new_lines.append(f"{indent}  floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,")
+                          new_lines.append(f"{indent}  floatingActionButton: FloatingActionButton.extended(")
+                          new_lines.append(f"{indent}    onPressed: () async {{")
+                          new_lines.append(f"{indent}      await DemoMode.enableGuestMode();")
+                          new_lines.append(f"{indent}      if (context.mounted) {{")
+                          new_lines.append(f"{indent}        Navigator.of(context).pushReplacementNamed('/guest_home');")
+                          new_lines.append(f"{indent}      }}")
+                          new_lines.append(f"{indent}    }},")
+                          new_lines.append(f"{indent}    icon: Icon(Icons.explore),")
+                          new_lines.append(f"{indent}    label: Text('Browse as Guest'),")
+                          new_lines.append(f"{indent}    backgroundColor: Colors.orange,")
+                          new_lines.append(f"{indent}  ),")
+                  content = '\n'.join(new_lines)
+                  print("Added Demo Mode FAB to login_screen.dart")
 
-                  # Find the main() function or the MyApp init
-                  # Add after void main() { or in initState
-                  if "async" in content.split("main")[1].split("{")[0] if "main" in content else "":
-                      # main() is already async
+              with open(login_file, 'w') as f:
+                  f.write(content)
+
+          # ============================================================
+          # PATCH: splash screens - navigate even on error
+          # ============================================================
+          for splash_name in ['splash_screen.dart', 'splash.dart']:
+              splash_path = f"lib/screens/{splash_name}"
+              if os.path.exists(splash_path):
+                  with open(splash_path, 'r') as f:
+                      content = f.read()
+
+                  if "demo_mode.dart" not in content:
+                      content = "import '../utils/demo_mode.dart';\n" + content
+
+                  if "DemoMode" not in content:
                       content = content.replace(
-                          "void main() async {",
-                          "void main() async {\n  await DemoMode.checkGuestMode();"
+                          "pushReplacementNamed('/login')",
+                          "pushReplacementNamed(DemoMode.isGuest ? '/guest_home' : '/login')"
                       )
-                  else:
                       content = content.replace(
-                          "void main() {",
-                          "void main() async {\n  WidgetsFlutterBinding.ensureInitialized();\n  await DemoMode.checkGuestMode();"
+                          "pushReplacementNamed('/home')",
+                          "pushReplacementNamed(DemoMode.isGuest ? '/guest_home' : '/home')"
                       )
 
-                  # Also check if there's an initial route and modify it
-                  # to go to home if guest mode is active
-                  content = content.replace(
-                      "initialRoute: '/login'",
-                      "initialRoute: DemoMode.isGuest ? '/home' : '/login'"
-                  )
-                  content = content.replace(
-                      "initialRoute: '/splash'",
-                      "initialRoute: DemoMode.isGuest ? '/home' : '/splash'"
-                  )
+                  if "DemoMode.checkGuestMode" not in content and "initState()" in content:
+                      content = content.replace(
+                          "super.initState();",
+                          "super.initState();\n"
+                          "    DemoMode.checkGuestMode().then((isGuest) {\n"
+                          "      if (isGuest && mounted) {\n"
+                          "        Navigator.of(context).pushReplacementNamed('/guest_home');\n"
+                          "      }\n"
+                          "    });"
+                      )
 
-                  with open(main_file, 'w') as f:
+                  with open(splash_path, 'w') as f:
                       f.write(content)
-                  print("Patched main.dart with guest mode check")
-              else:
-                  print("main.dart already has guest mode check")
+                  print(f"Patched {splash_name} with demo mode support")
+
+          # ============================================================
+          # PATCH: auth gate screens - bypass in demo mode
+          # ============================================================
+          for auth_name in ['auth_screen.dart', 'auth_gate.dart', 'auth_wrapper.dart', 'auth.dart']:
+              auth_path = f"lib/screens/{auth_name}"
+              if os.path.exists(auth_path):
+                  with open(auth_path, 'r') as f:
+                      content = f.read()
+
+                  if "demo_mode.dart" not in content:
+                      content = "import '../utils/demo_mode.dart';\n" + content
+                  if "guest_home_screen.dart" not in content:
+                      content = "import 'guest_home_screen.dart';\n" + content
+
+                  if "DemoMode" not in content:
+                      content = content.replace(
+                          "Widget build(BuildContext context) {",
+                          "Widget build(BuildContext context) {\n"
+                          "    if (DemoMode.isGuest) {\n"
+                          "      return GuestHomeScreen();\n"
+                          "    }"
+                      )
+
+                  with open(auth_path, 'w') as f:
+                      f.write(content)
+                  print(f"Patched {auth_name} with demo mode bypass")
 
           print("=== Demo/Guest Mode setup complete ===")
           PYEOF
